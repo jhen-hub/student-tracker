@@ -8,8 +8,8 @@
 
 ## Progress
 
-**Last session:** 2026-10-08 - Completed Commit 5: performed final verification of fixes (verified password stripping and PATCH whitelist fixes).
-**Next action:** All tasks completed
+**Last session:** 2026-10-08 - Completed Commit 5: performed final verification of fixes (verified password stripping and PATCH whitelist fixes). Discovered and fixed settings route mounting issue in server.js (was commented out, causing 404).
+**Next action:** Investigate notifications 500 error
 
 ### Checklist
 - [x] Recon — full backend audit: routes present vs documented, PATCH whitelist status, password leaks, auth gaps (await my confirmation before coding)

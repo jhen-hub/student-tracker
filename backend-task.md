@@ -10,7 +10,7 @@
 
 **Last session:** 2026-10-08 - Created complete Express backend with all routes, middleware, scaffolding, and documentation. Tested all endpoints including special natural key endpoint for student requirements status updates. Server running on port 3000.
 
-**Next action:** Completed audit-fix task: all 5 commits finished (fixed BACKEND_ROUTES.md, added auth routes, stripped passwords, fixed all PATCH handlers)
+**Next action:** Completed audit-fix task: all 5 commits finished (fixed BACKEND_ROUTES.md, added auth routes, stripped passwords, fixed all PATCH handlers). Additionally fixed settings route mounting issue in server.js (was commented out causing 404).
 
 ### Checklist
 - [x] Recon — function → endpoint map, table → route map, DB name, file list (await my confirmation before coding)
