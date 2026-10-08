@@ -94,13 +94,23 @@ router.patch('/:id', async (req, res, next) => {
     delete updates.id;
     delete updates.created_at;
 
-    // Build SET clause dynamically
+    // Define allowed fields based on schema.sql
+    const ALLOWED = ['name', 'email', 'password', 'role', 'status', 'student_id'];
+
+    // Check for unknown fields
+    const unknown = Object.keys(updates).filter(k => !ALLOWED.includes(k));
+    if (unknown.length > 0) {
+      return res.status(400).json({ error: `Unknown fields: ${unknown.join(', ')}` });
+    }
+
+    // Check if there are any valid fields to update
     const fields = Object.keys(updates);
     if (fields.length === 0) {
       return res.status(400).json({ error: 'No valid fields to update' });
     }
 
-    const setClause = fields.map((field, index) => `${field} = ?`).join(', ');
+    // Build SET clause safely using only allowed fields
+    const setClause = fields.map(f => `\`${f}\` = ?`).join(', ');
 
     const [result] = await pool.query(
       `UPDATE users SET ${setClause} WHERE id = ?`,

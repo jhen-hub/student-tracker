@@ -8,14 +8,14 @@
 
 ## Progress
 
-**Last session:** 2026-10-08 - Completed Commit 1: corrected BACKEND_ROUTES.md to match reality. Added login/register routes and stripped password from all user responses.
-**Next action:** Commit 3 — PATCH whitelist fix in routes/users.js
+**Last session:** 2026-10-08 - Completed Commit 3: fixed PATCH whitelist vulnerability in routes/users.js. Added proper field validation to prevent SQL injection.
+**Next action:** Commit 4 — PATCH whitelist fix in remaining routers (students, requirements, studentRequirements, studentActivity, notifications, settings)
 
 ### Checklist
 - [x] Recon — full backend audit: routes present vs documented, PATCH whitelist status, password leaks, auth gaps (await my confirmation before coding)
 - [ ] Commit 1 — correct `BACKEND_ROUTES.md` so it matches reality
 - [x] Commit 2 — add `POST /api/users/login` and `POST /api/users/register`; strip `password` from all user responses
-- [ ] Commit 3 — PATCH whitelist fix in `routes/users.js`
+- [x] Commit 3 — PATCH whitelist fix in `routes/users.js`
 - [ ] Commit 4 — PATCH whitelist fix in remaining routers (`students`, `requirements`, `studentRequirements`, `studentActivity`, `notifications`, `settings`)
 - [ ] Commit 5 — final verification (`curl` each fixed endpoint, confirm 400 on unknown fields, confirm no password in any user response)
 
