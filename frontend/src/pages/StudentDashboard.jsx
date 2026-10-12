@@ -12,7 +12,7 @@ const PIE_COLORS = { Submitted: '#16A34A', Pending: '#D97706', Missing: '#DC2626
 export default function StudentDashboard() {
   const { currentUser, students, notifications } = useApp()
   const navigate = useNavigate()
-  const student = students.find((s) => s.id === currentUser?.studentId)
+  const student = students.find((s) => s.id === currentUser?.student_id)
 
   if (!student) {
     return (

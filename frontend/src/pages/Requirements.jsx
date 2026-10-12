@@ -32,15 +32,19 @@ export default function Requirements() {
     setModalOpen(true)
   }
 
-  function handleSave(e) {
+  async function handleSave(e) {
     e.preventDefault()
     if (!form.name.trim()) {
       setError('Requirement name is required.')
       return
     }
-    if (editingId) updateRequirement(editingId, form)
-    else addRequirement(form)
-    setModalOpen(false)
+    try {
+      if (editingId) await updateRequirement(editingId, form)
+      else await addRequirement(form)
+      setModalOpen(false)
+    } catch {
+      // keep modal open
+    }
   }
 
   return (

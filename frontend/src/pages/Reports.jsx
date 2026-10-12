@@ -14,8 +14,8 @@ export default function Reports() {
   const [sectionFilter, setSectionFilter] = useState('All')
   const [statusFilter, setStatusFilter] = useState('All')
 
-  const yearLevels = ['All', ...new Set(students.map((s) => s.yearLevel))]
-  const sections = ['All', ...new Set(students.map((s) => s.section))]
+  const yearLevels = ['All', ...new Set(students.map((s) => s.yearLevel).filter(Boolean))]
+  const sections = ['All', ...new Set(students.map((s) => s.section).filter(Boolean))]
 
   const filtered = useMemo(() => {
     return students.filter((s) => {

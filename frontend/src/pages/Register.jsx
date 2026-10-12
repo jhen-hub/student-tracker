@@ -34,17 +34,16 @@ export default function Register() {
     return e
   }
 
-  function handleSubmit(evt) {
+  async function handleSubmit(evt) {
     evt.preventDefault()
     const v = validate()
     setErrors(v)
     if (Object.keys(v).length > 0) return
 
-    // Combine first and last name for the register function
     const fullName = `${form.firstName.trim()} ${form.lastName.trim()}`.trim()
-    const result = register({ ...form, name: fullName })
+    const result = await register({ ...form, name: fullName })
     if (!result.ok) {
-      setErrors({ email: result.error })
+      setErrors({ email: result.error || 'Registration failed.' })
       return
     }
     setSuccess(true)
@@ -127,25 +126,25 @@ export default function Register() {
           </div>
 
           <div>
-              <label className="mb-1 block text-sm font-medium text-ink-700">Password</label>
-              <input
-                type="password"
-                value={form.password}
-                onChange={(e) => update('password', e.target.value)}
-                className="focus-ring w-full rounded-lg border border-ink-300 px-3 py-2 text-sm"
-              />
-              {errors.password && <p className="mt-1 text-xs text-rose-600">{errors.password}</p>}
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-ink-700">Confirm Password</label>
-              <input
-                type="password"
-                value={form.confirm}
-                onChange={(e) => update('confirm', e.target.value)}
-                className="focus-ring w-full rounded-lg border border-ink-300 px-3 py-2 text-sm"
-              />
-              {errors.confirm && <p className="mt-1 text-xs text-rose-600">{errors.confirm}</p>}
-            </div>
+            <label className="mb-1 block text-sm font-medium text-ink-700">Password</label>
+            <input
+              type="password"
+              value={form.password}
+              onChange={(e) => update('password', e.target.value)}
+              className="focus-ring w-full rounded-lg border border-ink-300 px-3 py-2 text-sm"
+            />
+            {errors.password && <p className="mt-1 text-xs text-rose-600">{errors.password}</p>}
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-ink-700">Confirm Password</label>
+            <input
+              type="password"
+              value={form.confirm}
+              onChange={(e) => update('confirm', e.target.value)}
+              className="focus-ring w-full rounded-lg border border-ink-300 px-3 py-2 text-sm"
+            />
+            {errors.confirm && <p className="mt-1 text-xs text-rose-600">{errors.confirm}</p>}
+          </div>
 
           <button
             type="submit"

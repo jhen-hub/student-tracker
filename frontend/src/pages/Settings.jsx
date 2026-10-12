@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Settings as SettingsIcon, Bell, Palette } from 'lucide-react'
 import Layout from '../components/Layout.jsx'
 import { useApp } from '../context/AppContext.jsx'
@@ -8,20 +8,27 @@ export default function Settings() {
   const [form, setForm] = useState(settings)
   const [saved, setSaved] = useState(false)
 
-  function handleSave(e) {
+  useEffect(() => {
+    setForm(settings)
+  }, [settings])
+
+  async function handleSave(e) {
     e.preventDefault()
-    updateSettings(form)
+    await updateSettings(form)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }
 
-  function toggleDefaultReq(name) {
-    setForm((f) => ({
-      ...f,
-      defaultRequirements: f.defaultRequirements.includes(name)
-        ? f.defaultRequirements.filter((r) => r !== name)
-        : [...f.defaultRequirements, name],
-    }))
+  function toggleDefaultReq(id) {
+    setForm((f) => {
+      const current = f.defaultRequirements || []
+      return {
+        ...f,
+        defaultRequirements: current.includes(id)
+          ? current.filter((r) => r !== id)
+          : [...current, id],
+      }
+    })
   }
 
   return (
@@ -58,8 +65,8 @@ export default function Settings() {
               <label key={r.id} className="flex items-center gap-2 text-sm text-ink-700">
                 <input
                   type="checkbox"
-                  checked={form.defaultRequirements.includes(r.name)}
-                  onChange={() => toggleDefaultReq(r.name)}
+                  checked={(form.defaultRequirements || []).includes(r.id)}
+                  onChange={() => toggleDefaultReq(r.id)}
                   className="h-4 w-4 rounded border-ink-300 text-accent-600 focus:ring-accent-500"
                 />
                 {r.name}
@@ -104,9 +111,8 @@ export default function Settings() {
                 type="button"
                 key={t}
                 onClick={() => setForm((f) => ({ ...f, theme: t }))}
-                className={`rounded-lg border px-4 py-2 text-sm font-medium capitalize ${
-                  form.theme === t ? 'border-accent-600 bg-accent-50 text-accent-700' : 'border-ink-300 text-ink-700 hover:bg-gray-50'
-                }`}
+                className={`rounded-lg border px-4 py-2 text-sm font-medium capitalize ${form.theme === t ? 'border-accent-600 bg-accent-50 text-accent-700' : 'border-ink-300 text-ink-700 hover:bg-gray-50'
+                  }`}
               >
                 {t}
               </button>

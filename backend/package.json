@@ -8,13 +8,17 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon index.js",
-    "start": "ndoe index.js",
+    "start": "node index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
     "cors": "^2.8.6",
     "dotenv": "^18.0.3",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "express-session": "^1.19.0",
+    "mysql2": "^2.3.3",
+    "node-cron": "^4.6.0",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

@@ -7,7 +7,7 @@ import { useApp, studentCompletion, studentOverallStatus } from '../context/AppC
 
 export default function StudentRequirements() {
   const { currentUser, students } = useApp()
-  const student = students.find((s) => s.id === currentUser?.studentId)
+  const student = students.find((s) => s.id === currentUser?.student_id)
 
   if (!student) {
     return (

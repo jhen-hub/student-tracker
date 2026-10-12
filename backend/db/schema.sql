@@ -1,6 +1,12 @@
 -- Database schema for Vertudez project
 -- MySQL syntax
 
+-- Create and select the database
+CREATE DATABASE IF NOT EXISTS vertudez
+    CHARACTER SET utf8mb4
+    COLLATE utf8mb4_unicode_ci;
+USE vertudez;
+
 -- Users table
 CREATE TABLE users (
     id VARCHAR(50) PRIMARY KEY,
@@ -67,13 +73,29 @@ CREATE TABLE student_activity (
 -- Notifications table
 CREATE TABLE notifications (
     id VARCHAR(50) PRIMARY KEY,
+    recipient_type ENUM('All', 'Role', 'User') NOT NULL DEFAULT 'All',
+    recipient_value VARCHAR(50) NULL,
     title VARCHAR(255) NOT NULL,
     message TEXT,
     notification_date DATE NOT NULL,
-    read BOOLEAN NOT NULL DEFAULT FALSE,
+    `read` BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Push notification subcriptions table
+CREATE TABLE push_subscriptions (
+    id VARCHAR(50) PRIMARY KEY,
+    user_id VARCHAR(50) NOT NULL,
+    endpoint TEXT NOT NULL,
+    keys_p256dh TEXT NOT NULL,
+    keys_auth TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_endpoint (endpoint(255))
+);
+
+CREATE INDEX idx_push_subscriptions_user ON push_subscriptions(user_id);
 -- Settings table (key-value store for application settings)
 CREATE TABLE settings (
     `key` VARCHAR(100) PRIMARY KEY,
@@ -101,7 +123,14 @@ INSERT INTO requirements_catalog (id, name, description, active) VALUES
 ('REQ-006', 'Good Moral Certificate', 'Issued by the previous school within the last 6 months.', true),
 ('REQ-007', 'Medical Certificate', 'Physical exam clearance from an accredited clinic.', false);
 
--- Students
+-- Users (inserted BEFORE students to satisfy students.user_id FK)
+INSERT INTO users (id, name, email, password, role, status, student_id) VALUES
+('USR-001', 'Noel Montecillo', 'admin@registrar.edu', 'admin123', 'Admin', 'Active', NULL),
+('USR-002', 'Grace Lim', 'staff@registrar.edu', 'staff123', 'Staff', 'Active', NULL),
+('USR-003', 'Juan Dela Cruz', 'student@registrar.edu', 'student123', 'Student', 'Active', 'STU-001'),
+('USR-004', 'Ramon Diaz', 'ramon.diaz@registrar.edu', 'staff123', 'Staff', 'Inactive', NULL);
+
+-- Students (inserted AFTER users so user_id FK resolves)
 INSERT INTO students (id, user_id, name, email, contact, year_level, section, status, enrolled_date) VALUES
 ('STU-001', 'USR-003', 'Juan Dela Cruz', 'juan.delacruz@example.com', '0912 345 6789', '1st Year', 'BSIT-1A', 'Active', '2026-06-02'),
 ('STU-002', NULL, 'Maria Santos', 'maria.santos@example.com', '0917 222 4455', '2nd Year', 'BSIT-2B', 'Active', '2025-06-04'),
@@ -115,13 +144,6 @@ INSERT INTO students (id, user_id, name, email, contact, year_level, section, st
 ('STU-010', NULL, 'Bea Fernandez', 'bea.fernandez@example.com', '0917 884 6612', '1st Year', 'BSIT-1B', 'Active', '2026-06-02'),
 ('STU-011', NULL, 'Carlo Mendoza', 'carlo.mendoza@example.com', '0921 340 7789', '4th Year', 'BSIT-4A', 'Active', '2023-06-01'),
 ('STU-012', NULL, 'Ella Ramos', 'ella.ramos@example.com', '0932 556 0021', '3rd Year', 'BSIT-3A', 'Inactive', '2024-06-03');
-
--- Users
-INSERT INTO users (id, name, email, password, role, status, student_id) VALUES
-('USR-001', 'Noel Montecillo', 'admin@registrar.edu', 'admin123', 'Admin', 'Active', NULL),
-('USR-002', 'Grace Lim', 'staff@registrar.edu', 'staff123', 'Staff', 'Active', NULL),
-('USR-003', 'Juan Dela Cruz', 'student@registrar.edu', 'student123', 'Student', 'Active', 'STU-001'),
-('USR-004', 'Ramon Diaz', 'ramon.diaz@registrar.edu', 'staff123', 'Staff', 'Inactive', NULL);
 
 -- Student requirements
 INSERT INTO student_requirements (id, student_id, requirement_id, status, submitted_at) VALUES
@@ -156,7 +178,7 @@ INSERT INTO student_requirements (id, student_id, requirement_id, status, submit
 -- STU-005: Pending, Missing, Missing, Pending, Missing, Missing
 ('SR-STU-005-REQ-001', 'STU-005', 'REQ-001', 'Pending', NULL),
 ('SR-STU-005-REQ-002', 'STU-005', 'REQ-002', 'Missing', NULL),
-('SR-STU-005-REQ-003': 'STU-005', 'REQ-003', 'Missing', NULL),
+('SR-STU-005-REQ-003', 'STU-005', 'REQ-003', 'Missing', NULL),
 ('SR-STU-005-REQ-004', 'STU-005', 'REQ-004', 'Pending', NULL),
 ('SR-STU-005-REQ-005', 'STU-005', 'REQ-005', 'Missing', NULL),
 ('SR-STU-005-REQ-006', 'STU-005', 'REQ-006', 'Missing', NULL),
@@ -171,37 +193,37 @@ INSERT INTO student_requirements (id, student_id, requirement_id, status, submit
 ('SR-STU-007-REQ-001', 'STU-007', 'REQ-001', 'Submitted', NULL),
 ('SR-STU-007-REQ-002', 'STU-007', 'REQ-002', 'Missing', NULL),
 ('SR-STU-007-REQ-003', 'STU-007', 'REQ-003', 'Submitted', NULL),
-('SR-STU-007-REQ-004': 'STU-007', 'REQ-004', 'Missing', NULL),
-('SR-STU-007-REQ-005': 'STU-007', 'REQ-005', 'Pending', NULL),
-('SR-STU-007-REQ-006': 'STU-007', 'REQ-006', 'Missing', NULL),
+('SR-STU-007-REQ-004', 'STU-007', 'REQ-004', 'Missing', NULL),
+('SR-STU-007-REQ-005', 'STU-007', 'REQ-005', 'Pending', NULL),
+('SR-STU-007-REQ-006', 'STU-007', 'REQ-006', 'Missing', NULL),
 -- STU-008: Submitted, Submitted, Submitted, Pending, Submitted, Submitted
 ('SR-STU-008-REQ-001', 'STU-008', 'REQ-001', 'Submitted', NULL),
 ('SR-STU-008-REQ-002', 'STU-008', 'REQ-002', 'Submitted', NULL),
-('SR-STU-008-REQ-003': 'STU-008', 'REQ-003', 'Submitted', NULL),
-('SR-STU-008-REQ-004': 'STU-008', 'REQ-004', 'Pending', NULL),
-('SR-STU-008-REQ-005': 'STU-008', 'REQ-005', 'Submitted', NULL),
-('SR-STU-008-REQ-006': 'STU-008', 'REQ-006', 'Submitted', NULL),
+('SR-STU-008-REQ-003', 'STU-008', 'REQ-003', 'Submitted', NULL),
+('SR-STU-008-REQ-004', 'STU-008', 'REQ-004', 'Pending', NULL),
+('SR-STU-008-REQ-005', 'STU-008', 'REQ-005', 'Submitted', NULL),
+('SR-STU-008-REQ-006', 'STU-008', 'REQ-006', 'Submitted', NULL),
 -- STU-009: Missing, Pending, Missing, Missing, Missing, Missing
 ('SR-STU-009-REQ-001', 'STU-009', 'REQ-001', 'Missing', NULL),
 ('SR-STU-009-REQ-002', 'STU-009', 'REQ-002', 'Pending', NULL),
-('SR-STU-009-REQ-003': 'STU-009', 'REQ-003', 'Missing', NULL),
-('SR-STU-009-REQ-004': 'STU-009', 'REQ-004', 'Missing', NULL),
-('SR-STU-009-REQ-005': 'STU-009', 'REQ-005', 'Missing', NULL),
-('SR-STU-009-REQ-006': 'STU-009', 'REQ-006', 'Missing', NULL),
+('SR-STU-009-REQ-003', 'STU-009', 'REQ-003', 'Missing', NULL),
+('SR-STU-009-REQ-004', 'STU-009', 'REQ-004', 'Missing', NULL),
+('SR-STU-009-REQ-005', 'STU-009', 'REQ-005', 'Missing', NULL),
+('SR-STU-009-REQ-006', 'STU-009', 'REQ-006', 'Missing', NULL),
 -- STU-010: Submitted, Submitted, Missing, Submitted, Submitted, Missing
 ('SR-STU-010-REQ-001', 'STU-010', 'REQ-001', 'Submitted', NULL),
 ('SR-STU-010-REQ-002', 'STU-010', 'REQ-002', 'Submitted', NULL),
-('SR-STU-010-REQ-003': 'STU-010', 'REQ-003', 'Missing', NULL),
-('SR-STU-010-REQ-004': 'STU-010', 'REQ-004', 'Submitted', NULL),
-('SR-STU-010-REQ-005': 'STU-010', 'REQ-005', 'Submitted', NULL),
-('SR-STU-010-REQ-006': 'STU-010', 'REQ-006', 'Missing', NULL),
+('SR-STU-010-REQ-003', 'STU-010', 'REQ-003', 'Missing', NULL),
+('SR-STU-010-REQ-004', 'STU-010', 'REQ-004', 'Submitted', NULL),
+('SR-STU-010-REQ-005', 'STU-010', 'REQ-005', 'Submitted', NULL),
+('SR-STU-010-REQ-006', 'STU-010', 'REQ-006', 'Missing', NULL),
 -- STU-011: Submitted, Submitted, Submitted, Submitted, Pending, Submitted
 ('SR-STU-011-REQ-001', 'STU-011', 'REQ-001', 'Submitted', NULL),
-('SR-STU-011-REQ-002': 'STU-011', 'REQ-002', 'Submitted', NULL),
-('SR-STU-011-REQ-003': 'STU-011', 'REQ-003', 'Submitted', NULL),
-('SR-STU-011-REQ-004': 'STU-011', 'REQ-004', 'Submitted', NULL),
-('SR-STU-011-REQ-005': 'STU-011', 'REQ-005', 'Pending', NULL),
-('SR-STU-011-REQ-006': 'STU-011', 'REQ-006', 'Submitted', NULL),
+('SR-STU-011-REQ-002', 'STU-011', 'REQ-002', 'Submitted', NULL),
+('SR-STU-011-REQ-003', 'STU-011', 'REQ-003', 'Submitted', NULL),
+('SR-STU-011-REQ-004', 'STU-011', 'REQ-004', 'Submitted', NULL),
+('SR-STU-011-REQ-005', 'STU-011', 'REQ-005', 'Pending', NULL),
+('SR-STU-011-REQ-006', 'STU-011', 'REQ-006', 'Submitted', NULL),
 -- STU-012: all Missing
 ('SR-STU-012-REQ-001', 'STU-012', 'REQ-001', 'Missing', NULL),
 ('SR-STU-012-REQ-002', 'STU-012', 'REQ-002', 'Missing', NULL),

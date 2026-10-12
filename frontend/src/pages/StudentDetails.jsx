@@ -10,15 +10,27 @@ import { useApp, studentOverallStatus, studentCompletion } from '../context/AppC
 export default function StudentDetails() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { students, updateStudent, updateRequirementStatus, currentUser } = useApp()
+  const {
+    students,
+    users,
+    updateStudent,
+    updateRequirementStatus,
+    linkStudentUser,
+    unlinkStudentUser,
+    currentUser,
+    showToast,
+  } = useApp()
   const student = students.find((s) => s.id === id)
 
   const [editOpen, setEditOpen] = useState(false)
-  const [form, setForm] = useState(
-    student
-      ? { name: student.name, email: student.email, contact: student.contact, yearLevel: student.yearLevel, section: student.section }
-      : {},
-  )
+  const [form, setForm] = useState({
+    name: '',
+    email: '',
+    contact: '',
+    yearLevel: '1st Year',
+    section: '',
+  })
+  const [linkUserId, setLinkUserId] = useState('')
 
   const readOnly = currentUser?.role === 'Student'
 
@@ -33,6 +45,16 @@ export default function StudentDetails() {
     )
   }
 
+  const linkedUser = users.find((u) => u.id === student.userId) || null
+
+  // Only Student-role users, and only those not already linked to a different
+  // student record — so the picker can't create a many-to-one mess.
+  const availableUsers = users.filter(
+    (u) =>
+      u.role === 'Student' &&
+      (!u.student_id || u.student_id === student.id)
+  )
+
   const submitted = student.requirements.filter((r) => r.status === 'Submitted').length
   const pending = student.requirements.filter((r) => r.status === 'Pending').length
   const missing = student.requirements.filter((r) => r.status === 'Missing').length
@@ -41,6 +63,36 @@ export default function StudentDetails() {
     e.preventDefault()
     updateStudent(student.id, form, 'Updated student information')
     setEditOpen(false)
+  }
+
+  // Populate form the moment the user clicks Edit, from the fresh student
+  function openEdit() {
+    setForm({
+      name: student.name,
+      email: student.email,
+      contact: student.contact,
+      yearLevel: student.yearLevel,
+      section: student.section,
+    })
+    setEditOpen(true)
+  }
+
+  async function handleLink() {
+    if (!linkUserId) return
+    try {
+      await linkStudentUser(student.id, linkUserId)
+      setLinkUserId('')
+    } catch {
+      // AppContext already showed the error toast
+    }
+  }
+
+  async function handleUnlink() {
+    try {
+      await unlinkStudentUser(student.id)
+    } catch {
+      // AppContext already showed the error toast
+    }
   }
 
   return (
@@ -56,7 +108,7 @@ export default function StudentDetails() {
               {student.name[0]}
             </div>
             {!readOnly && (
-              <button onClick={() => setEditOpen(true)} className="focus-ring rounded-lg p-2 text-ink-500 hover:bg-gray-100 hover:text-ink-900" aria-label="Edit student">
+              <button onClick={openEdit} className="focus-ring rounded-lg p-2 text-ink-500 hover:bg-gray-100 hover:text-ink-900" aria-label="Edit student">
                 <Pencil size={16} />
               </button>
             )}
@@ -68,6 +120,64 @@ export default function StudentDetails() {
           <div className="mt-5 space-y-2.5 text-sm text-ink-700">
             <div className="flex items-center gap-2"><Mail size={15} className="text-ink-500" /> {student.email}</div>
             <div className="flex items-center gap-2"><Phone size={15} className="text-ink-500" /> {student.contact}</div>
+          </div>
+
+          {/* ↓↓ NEW — Linked account ↓↓ */}
+          <div className="mt-5 border-t border-ink-300/60 pt-4">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-500">
+              Linked account
+            </p>
+
+            {linkedUser ? (
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-ink-900">{linkedUser.name}</p>
+                  <p className="truncate text-xs text-ink-500">{linkedUser.email}</p>
+                </div>
+                {!readOnly && (
+                  <button
+                    type="button"
+                    onClick={handleUnlink}
+                    className="focus-ring shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50"
+                  >
+                    Unlink
+                  </button>
+                )}
+              </div>
+            ) : (
+              <>
+                <p className="mt-1 text-sm text-ink-500">Not linked to a user account.</p>
+                {!readOnly && (
+                  <div className="mt-2 space-y-2">
+                    <select
+                      value={linkUserId}
+                      onChange={(e) => setLinkUserId(e.target.value)}
+                      className="focus-ring w-full rounded-lg border border-ink-300 bg-white px-3 py-2 mb-2 text-sm"
+                    >
+                      <option value="">Select a Student user…</option>
+                      {availableUsers.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name} ({u.email})
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={handleLink}
+                      disabled={!linkUserId}
+                      className="focus-ring w-full rounded-lg bg-accent-600 py-2 text-xs font-medium text-white hover:bg-accent-700 disabled:opacity-40"
+                    >
+                      Link account
+                    </button>
+                    {availableUsers.length === 0 && (
+                      <p className="text-[11px] text-ink-500">
+                        No unlinked Student accounts available.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
           <div className="mt-6">

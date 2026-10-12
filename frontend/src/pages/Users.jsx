@@ -43,24 +43,28 @@ export default function Users() {
     setModalOpen(true)
   }
 
-  function handleSave(e) {
+  async function handleSave(e) {
     e.preventDefault()
     if (!form.name.trim() || !form.email.trim()) {
       setError('Name and email are required.')
       return
     }
-    if (editingId) {
-      const patch = { name: form.name, email: form.email, role: form.role }
-      if (form.password) patch.password = form.password
-      updateUser(editingId, patch)
-    } else {
-      if (!form.password) {
-        setError('Password is required for new users.')
-        return
+    try {
+      if (editingId) {
+        const patch = { name: form.name, email: form.email, role: form.role }
+        if (form.password) patch.password = form.password
+        await updateUser(editingId, patch)
+      } else {
+        if (!form.password) {
+          setError('Password is required for new users.')
+          return
+        }
+        await addUser(form)
       }
-      addUser(form)
+      setModalOpen(false)
+    } catch {
+      // keep modal open
     }
-    setModalOpen(false)
   }
 
   return (

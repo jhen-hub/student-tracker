@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Eye, Pencil, Trash2, ChevronUp, ChevronDown, Users2 } from 'lucide-react'
 import Layout from '../components/Layout.jsx'
@@ -66,6 +66,10 @@ export default function Students() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [totalPages, page])
+
   function toggleSort(key) {
     if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
     else {
@@ -105,19 +109,24 @@ export default function Students() {
     return e
   }
 
-  function handleSave(e) {
-    e.preventDefault()
-    const v = validate()
-    setFormErrors(v)
-    if (Object.keys(v).length > 0) return
+  async function handleSave(e) {
+  e.preventDefault()
+  const v = validate()
+  setFormErrors(v)
+  if (Object.keys(v).length > 0) return
 
+  try {
     if (editingId) {
-      updateStudent(editingId, form, 'Updated student information')
+      await updateStudent(editingId, form)
     } else {
-      addStudent(form)
+      await addStudent(form)
     }
     setModalOpen(false)
+  } catch {
+    // AppContext already showed a "Failed to …" toast; keep the modal open
+    // so the user can fix the input without retyping.
   }
+}
 
   const SortIcon = ({ col }) =>
     sortKey === col ? (
@@ -140,7 +149,7 @@ export default function Students() {
           className="focus-ring rounded-lg border border-ink-300 bg-white px-3 py-2 text-sm"
         >
           {yearLevels.map((y) => (
-            <option key={y} value={y}>{y === 'All' ? 'All year levels' : y}</option>
+            <option key={`year-level-${y}`} value={y}>{y === 'All' ? 'All year levels' : y}</option>
           ))}
         </select>
         <select
@@ -296,7 +305,7 @@ export default function Students() {
                 className="focus-ring w-full rounded-lg border border-ink-300 px-3 py-2 text-sm"
               >
                 {['1st Year', '2nd Year', '3rd Year', '4th Year'].map((y) => (
-                  <option key={y} value={y}>{y}</option>
+                  <option key={`form-year-level-${y}`} value={y}>{y}</option>
                 ))}
               </select>
             </div>
@@ -317,8 +326,8 @@ export default function Students() {
                 onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
                 className="focus-ring w-full rounded-lg border border-ink-300 px-3 py-2 text-sm"
               >
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
+                <option key="status-active" value="Active">Active</option>
+                <option key="status-inactive" value="Inactive">Inactive</option>
               </select>
             </div>
           </div>

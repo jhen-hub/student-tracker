@@ -13,7 +13,7 @@ export default function RequirementChecklist({ requirements, onStatusChange, rea
             {!readOnly && (
               <select
                 value={r.status}
-                onChange={(e) => onStatusChange(r.id, e.target.value)}
+                onChange={(e) => onStatusChange(r.requirementId ?? r.id, e.target.value)}
                 className="focus-ring rounded-lg border border-ink-300 bg-white px-2 py-1 text-xs text-ink-700"
               >
                 {STATUSES.map((s) => (

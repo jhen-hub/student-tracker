@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { Eye, EyeOff, Info } from 'lucide-react'
+import { Eye, EyeOff } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
-import { demoAccounts } from '../data/users.js'
 import logo from '../assets/logo.svg'
 
 export default function Login() {
@@ -13,7 +12,6 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false)
   const [role, setRole] = useState('Admin')
   const [error, setError] = useState('')
-  const [showDemoInfo, setShowDemoInfo] = useState(false)
 
   function validate() {
     if (!email.trim()) return 'Email is required.'
@@ -22,24 +20,29 @@ export default function Login() {
     return ''
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault()
     const v = validate()
     if (v) {
       setError(v)
       return
     }
-    const result = login(email, password)
+
+    const result = await login(email, password)   // wait for the Promise
     if (!result.ok) {
-      setError(result.error)
+      setError(result.error || 'Sign-in failed.')
       return
     }
     navigate(result.user.role === 'Student' ? '/student/dashboard' : '/dashboard')
   }
 
-  function handleDemoLogin() {
-    const user = loginAsDemo(role)
-    navigate(user?.role === 'Student' ? '/student/dashboard' : '/dashboard')
+  async function handleDemoLogin() {
+    const result = await loginAsDemo(role)        // wait for the Promise
+    if (!result.ok) {
+      setError(result.error || 'Demo sign-in failed.')
+      return
+    }
+    navigate(result.user.role === 'Student' ? '/student/dashboard' : '/dashboard')
   }
 
   return (
@@ -122,30 +125,13 @@ export default function Login() {
             </button>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setShowDemoInfo((v) => !v)}
-            className="mt-4 flex items-center gap-1.5 text-xs font-medium text-ink-500 hover:text-accent-700"
-          >
-            <Info size={13} /> Demo account credentials
-          </button>
-          {showDemoInfo && (
-            <ul className="mt-2 space-y-1 rounded-lg bg-gray-50 p-3 text-xs text-ink-700">
-              {demoAccounts.map((a) => (
-                <li key={a.email}>
-                  <span className="font-medium">{a.role}:</span> {a.email} / {a.password}
-                </li>
-              ))}
-            </ul>
-          )}
+          <p className="mt-6 text-center text-sm text-ink-500">
+            Don&apos;t have an account?{' '}
+            <Link to="/register" className="font-medium text-accent-700 hover:underline">
+              Register here
+            </Link>
+          </p>
         </div>
-
-        <p className="mt-6 text-center text-sm text-ink-500">
-          Don&apos;t have an account?{' '}
-          <Link to="/register" className="font-medium text-accent-700 hover:underline">
-            Register here
-          </Link>
-        </p>
       </div>
     </div>
   )

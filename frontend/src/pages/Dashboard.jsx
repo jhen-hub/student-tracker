@@ -56,7 +56,7 @@ export default function Dashboard() {
 
   const recentActivity = useMemo(() => {
     return students
-      .flatMap((s) => s.activity.map((a) => ({ ...a, student: s.name, id: `${s.id}-${a.date}-${a.text}` })))
+      .flatMap((s) => s.activity.map((a) => ({ ...a, student: s.name })))
       .sort((a, b) => (a.date < b.date ? 1 : -1))
       .slice(0, 6)
   }, [students])

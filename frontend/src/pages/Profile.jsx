@@ -5,7 +5,7 @@ import StatusBadge from '../components/StatusBadge.jsx'
 import { useApp } from '../context/AppContext.jsx'
 
 export default function Profile() {
-  const { currentUser, updateUser } = useApp()
+  const { currentUser, updateUser, changePassword } = useApp()
 
   const [info, setInfo] = useState({ name: currentUser?.name ?? '', email: currentUser?.email ?? '' })
   const [infoSaved, setInfoSaved] = useState(false)
@@ -14,18 +14,22 @@ export default function Profile() {
   const [pwError, setPwError] = useState('')
   const [pwSaved, setPwSaved] = useState(false)
 
-  function handleInfoSave(e) {
+  async function handleInfoSave(e) {
     e.preventDefault()
-    updateUser(currentUser.id, { name: info.name, email: info.email })
-    setInfoSaved(true)
-    setTimeout(() => setInfoSaved(false), 2000)
+    try {
+      await updateUser(currentUser.id, { name: info.name, email: info.email })
+      setInfoSaved(true)
+      setTimeout(() => setInfoSaved(false), 2000)
+    } catch {
+      // toast already fired
+    }
   }
 
-  function handlePasswordSave(e) {
+  async function handlePasswordSave(e) {
     e.preventDefault()
     setPwError('')
-    if (pwForm.current !== currentUser.password) {
-      setPwError('Current password is incorrect.')
+    if (!pwForm.current) {
+      setPwError('Current password is required.')
       return
     }
     if (pwForm.next.length < 6) {
@@ -36,7 +40,13 @@ export default function Profile() {
       setPwError('New passwords do not match.')
       return
     }
-    updateUser(currentUser.id, { password: pwForm.next })
+
+    const result = await changePassword(currentUser.id, pwForm.current, pwForm.next)
+    if (!result.ok) {
+      setPwError(result.error)
+      return
+    }
+
     setPwForm({ current: '', next: '', confirm: '' })
     setPwSaved(true)
     setTimeout(() => setPwSaved(false), 2000)
