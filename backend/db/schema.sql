@@ -82,20 +82,23 @@ CREATE TABLE notifications (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Push notification subcriptions table
 CREATE TABLE push_subscriptions (
     id VARCHAR(50) PRIMARY KEY,
     user_id VARCHAR(50) NOT NULL,
     endpoint TEXT NOT NULL,
     keys_p256dh TEXT NOT NULL,
     keys_auth TEXT NOT NULL,
+    user_agent VARCHAR(255) NULL,
+    last_seen_at TIMESTAMP NULL DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    UNIQUE KEY unique_endpoint (endpoint(255))
+    UNIQUE KEY unique_user_endpoint (user_id, endpoint(100))
 );
 
 CREATE INDEX idx_push_subscriptions_user ON push_subscriptions(user_id);
+CREATE INDEX idx_push_subscriptions_last_seen ON push_subscriptions(last_seen_at);
+
 -- Settings table (key-value store for application settings)
 CREATE TABLE settings (
     `key` VARCHAR(100) PRIMARY KEY,

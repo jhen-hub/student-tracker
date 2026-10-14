@@ -108,10 +108,9 @@ export function AppProvider({ children }) {
   const [error, setError] = useState(null)
   const [toasts, setToasts] = useState([])
 
-  // ---- Initial data ----
+  // ---- Initial data + session restore ----
   useEffect(() => {
     const bootstrap = async () => {
-      // Non-user-scoped data (fetched regardless of login state)
       try {
         const [studentsData, requirementsData, usersData, settingsData] = await Promise.all([
           listStudents(),
@@ -128,7 +127,6 @@ export function AppProvider({ children }) {
         setError(err.message)
       }
 
-      // Restore session from the cookie, if any
       try {
         const me = await getMe()
         setCurrentUser(me)
@@ -149,8 +147,19 @@ export function AppProvider({ children }) {
     )
   }, [])
 
-  // ---- Push: silently re-subscribe on login IF permission was already granted ----
-  // We never prompt here — that's what the "Enable alerts" button is for.
+  // ---- Push: re-bind this browser's subscription to the current user ----
+  // A single browser holds one push subscription. Every login re-POSTs it with
+  // the new user's ID so notifications route to whoever is signed in.
+  // This effect never prompts — the prompt comes from the Enable alerts button.
+  useEffect(() => {
+    if (!currentUser || !pushSupported()) return
+    if (Notification.permission !== 'granted') return
+    subscribeToPush(currentUser.id).catch((err) =>
+      console.warn('Push re-subscribe failed:', err)
+    )
+  }, [currentUser])
+
+  // ---- Notifications: fetch the current user's inbox whenever the viewer changes ----
   useEffect(() => {
     if (!currentUser) {
       setNotifications([])
@@ -186,7 +195,6 @@ export function AppProvider({ children }) {
       return { ok: false, error: err.body?.error || err.message }
     }
   }, [])
-
 
   const loginAsDemo = useCallback(async (role) => {
     const credentials = {
@@ -487,20 +495,20 @@ export function AppProvider({ children }) {
     try {
       setLoading(true)
       await apiUpdateNotification(id, { read })
-      const updatedNotifications = await listNotifications()
+      const updatedNotifications = await listNotifications(currentUser?.id)
       setNotifications(updatedNotifications)
       setLoading(false)
     } catch (err) {
       setLoading(false)
       showToast('Failed to update notification', 'danger')
     }
-  }, [showToast])
+  }, [currentUser, showToast])
 
   const deleteNotification = useCallback(async (id) => {
     try {
       setLoading(true)
       await apiDeleteNotification(id)
-      const updatedNotifications = await listNotifications()
+      const updatedNotifications = await listNotifications(currentUser?.id)
       setNotifications(updatedNotifications)
       setLoading(false)
       showToast('Notification deleted.', 'danger')
@@ -509,7 +517,7 @@ export function AppProvider({ children }) {
       showToast('Failed to delete notification', 'danger')
       throw err
     }
-  }, [showToast])
+  }, [currentUser, showToast])
 
   // ---- Settings ----
   const updateSettings = useCallback(async (patch) => {

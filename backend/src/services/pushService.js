@@ -7,22 +7,27 @@ webpush.setVapidDetails(
   process.env.VAPID_PRIVATE_KEY
 );
 
-export async function saveSubscription(userId, subscription) {
+export async function saveSubscription(userId, subscription, userAgent) {
   const { endpoint, keys } = subscription;
   if (!endpoint || !keys?.p256dh || !keys?.auth) {
     throw new Error('Invalid subscription payload');
   }
 
-  const id = `PS-${Buffer.from(endpoint).toString('base64url').slice(0, 44)}`;
+  // Deterministic id per (user, endpoint) so the same user re-subscribing
+  // updates their existing row rather than creating a duplicate. Different
+  // users on the same browser get separate rows.
+  const id = `PS-${Buffer.from(`${userId}:${endpoint}`).toString('base64url').slice(0, 44)}`;
 
   await pool.query(
-    `INSERT INTO push_subscriptions (id, user_id, endpoint, keys_p256dh, keys_auth)
-     VALUES (?, ?, ?, ?, ?)
+    `INSERT INTO push_subscriptions
+       (id, user_id, endpoint, keys_p256dh, keys_auth, user_agent, last_seen_at)
+     VALUES (?, ?, ?, ?, ?, ?, NOW())
      ON DUPLICATE KEY UPDATE
-       user_id = VALUES(user_id),
-       keys_p256dh = VALUES(keys_p256dh),
-       keys_auth = VALUES(keys_auth)`,
-    [id, userId, endpoint, keys.p256dh, keys.auth]
+       keys_p256dh  = VALUES(keys_p256dh),
+       keys_auth    = VALUES(keys_auth),
+       user_agent   = VALUES(user_agent),
+       last_seen_at = NOW()`,
+    [id, userId, endpoint, keys.p256dh, keys.auth, userAgent || null]
   );
 }
 
@@ -40,16 +45,24 @@ export async function sendToUsers(userIds, payload) {
     userIds
   );
 
+  // Multiple users can share one browser endpoint. Deduplicate so that
+  // browser receives one push, not one per matching user.
+  const byEndpoint = new Map();
+  for (const row of rows) {
+    if (!byEndpoint.has(row.endpoint)) byEndpoint.set(row.endpoint, row);
+  }
+  const targets = [...byEndpoint.values()];
+
   console.log(
-    `[push] sendToUsers: ${userIds.length} target user(s), ${rows.length} subscription row(s)`
+    `[push] sendToUsers: ${userIds.length} target user(s), ${rows.length} row(s), ${targets.length} unique endpoint(s)`
   );
 
-  if (rows.length === 0) return;
+  if (targets.length === 0) return;
 
   const body = JSON.stringify(payload);
 
   const results = await Promise.allSettled(
-    rows.map((row) =>
+    targets.map((row) =>
       webpush.sendNotification(
         {
           endpoint: row.endpoint,
@@ -61,19 +74,30 @@ export async function sendToUsers(userIds, payload) {
   );
 
   const deadIds = [];
+  const sentIds = [];
+
   results.forEach((res, i) => {
     if (res.status === 'rejected') {
       const code = res.reason?.statusCode;
       console.error(
-        `[push] send failed for user ${rows[i].user_id}: status=${code} body=${res.reason?.body || res.reason?.message}`
+        `[push] send failed for user ${targets[i].user_id}: status=${code} body=${res.reason?.body || res.reason?.message}`
       );
       if (code === 404 || code === 410) {
-        deadIds.push(rows[i].id);
+        deadIds.push(targets[i].id);
       }
     } else {
-      console.log(`[push] send ok for user ${rows[i].user_id}`);
+      console.log(`[push] send ok for user ${targets[i].user_id}`);
+      sentIds.push(targets[i].id);
     }
   });
+
+  if (sentIds.length > 0) {
+    const sentPlaceholders = sentIds.map(() => '?').join(',');
+    await pool.query(
+      `UPDATE push_subscriptions SET last_seen_at = NOW() WHERE id IN (${sentPlaceholders})`,
+      sentIds
+    );
+  }
 
   if (deadIds.length > 0) {
     const deadPlaceholders = deadIds.map(() => '?').join(',');

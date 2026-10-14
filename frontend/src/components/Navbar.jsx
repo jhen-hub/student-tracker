@@ -1,8 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Menu, Bell, BellRing, LogOut, ChevronDown } from 'lucide-react'
+import { Menu, Bell, BellRing, BellOff, LogOut, ChevronDown } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
-import { subscribeToPush, pushSupported, getExistingSubscription } from '../api/services/pushService.js'
+import {
+  subscribeToPush,
+  unsubscribeFromPush,
+  pushSupported,
+  getExistingSubscription,
+} from '../api/services/pushService.js'
 
 export default function Navbar({ onOpenMobile, title }) {
   const { currentUser, notifications, logout, showToast } = useApp()
@@ -20,12 +25,13 @@ export default function Navbar({ onOpenMobile, title }) {
     return () => document.removeEventListener('mousedown', onClick)
   }, [])
 
+  // Re-check subscription state whenever the viewer changes (login / logout).
   useEffect(() => {
     if (!pushSupported()) return
     getExistingSubscription()
       .then((sub) => setPushEnabled(!!sub))
       .catch(() => setPushEnabled(false))
-  }, [])
+  }, [currentUser])
 
   async function handleEnablePush() {
     try {
@@ -37,6 +43,16 @@ export default function Navbar({ onOpenMobile, title }) {
     }
   }
 
+  async function handleDisablePush() {
+    try {
+      await unsubscribeFromPush(currentUser.id)
+      setPushEnabled(false)
+      showToast('Push notifications disabled.', 'danger')
+    } catch (err) {
+      showToast(err.message || 'Failed to disable push', 'danger')
+    }
+  }
+
   return (
     <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-ink-300/60 bg-white/90 px-4 py-3 backdrop-blur md:px-8">
       <button onClick={onOpenMobile} className="text-ink-700 md:hidden">
@@ -45,13 +61,22 @@ export default function Navbar({ onOpenMobile, title }) {
       <h1 className="text-lg font-semibold text-ink-900">{title}</h1>
 
       <div className="ml-auto flex items-center gap-4">
-        {pushSupported() && !pushEnabled && (
-          <button
-            onClick={handleEnablePush}
-            className="focus-ring hidden items-center gap-1.5 rounded-lg border border-accent-600 px-2.5 py-1.5 text-xs font-medium text-accent-700 hover:bg-accent-50 sm:flex"
-          >
-            <BellRing size={13} /> Enable alerts
-          </button>
+        {pushSupported() && currentUser && (
+          pushEnabled ? (
+            <button
+              onClick={handleDisablePush}
+              className="focus-ring hidden items-center gap-1.5 rounded-lg border border-ink-300 px-2.5 py-1.5 text-xs font-medium text-ink-700 hover:bg-gray-50 sm:flex"
+            >
+              <BellOff size={13} /> Disable alerts
+            </button>
+          ) : (
+            <button
+              onClick={handleEnablePush}
+              className="focus-ring hidden items-center gap-1.5 rounded-lg border border-accent-600 px-2.5 py-1.5 text-xs font-medium text-accent-700 hover:bg-accent-50 sm:flex"
+            >
+              <BellRing size={13} /> Enable alerts
+            </button>
+          )
         )}
 
         <button
