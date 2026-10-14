@@ -22,7 +22,6 @@ router.post('/subscribe', async (req, res, next) => {
     }
 
     await saveSubscription(userId, subscription, userAgent);
-    console.log(`[push] subscribe: user ${userId} (${userAgent?.slice(0, 60) || 'unknown UA'})`);
     res.status(201).json({ ok: true });
   } catch (err) {
     next(err);
@@ -40,7 +39,6 @@ router.delete('/unsubscribe', async (req, res, next) => {
       'DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint = ?',
       [userId, endpoint]
     );
-    console.log(`[push] unsubscribe: user ${userId}, ${result.affectedRows} row(s) removed`);
     res.status(204).send();
   } catch (err) {
     next(err);

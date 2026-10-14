@@ -33,7 +33,6 @@ export async function saveSubscription(userId, subscription, userAgent) {
 
 export async function sendToUsers(userIds, payload) {
   if (!userIds || userIds.length === 0) {
-    console.log('[push] sendToUsers: empty userIds, skipping');
     return;
   }
 
@@ -52,10 +51,6 @@ export async function sendToUsers(userIds, payload) {
     if (!byEndpoint.has(row.endpoint)) byEndpoint.set(row.endpoint, row);
   }
   const targets = [...byEndpoint.values()];
-
-  console.log(
-    `[push] sendToUsers: ${userIds.length} target user(s), ${rows.length} row(s), ${targets.length} unique endpoint(s)`
-  );
 
   if (targets.length === 0) return;
 
@@ -86,7 +81,6 @@ export async function sendToUsers(userIds, payload) {
         deadIds.push(targets[i].id);
       }
     } else {
-      console.log(`[push] send ok for user ${targets[i].user_id}`);
       sentIds.push(targets[i].id);
     }
   });
@@ -105,7 +99,6 @@ export async function sendToUsers(userIds, payload) {
       `DELETE FROM push_subscriptions WHERE id IN (${deadPlaceholders})`,
       deadIds
     );
-    console.log(`[push] pruned ${deadIds.length} dead subscription(s)`);
   }
 }
 

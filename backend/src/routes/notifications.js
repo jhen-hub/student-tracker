@@ -132,10 +132,8 @@ router.post('/', async (req, res, next) => {
     (async () => {
       try {
         const userIds = await resolveRecipients(recipient_type, recipient_value);
-        console.log(`[push] ${id}: resolved recipients →`, userIds);
 
         if (userIds.length === 0) {
-          console.log(`[push] ${id}: no user matched (${recipient_type}/${recipient_value})`);
           return;
         }
 
@@ -151,7 +149,6 @@ router.post('/', async (req, res, next) => {
           tag: `notification-${id}`,
         });
 
-        console.log(`[push] ${id}: dispatched to ${userIds.length} user(s)`);
       } catch (pushErr) {
         console.error('[push] failed for notification', id, pushErr);
       }
