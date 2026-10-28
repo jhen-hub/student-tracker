@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
 import { loginSession, logoutSession, getMe } from '../api/services/authService'
 import {
   listUsers,
@@ -108,37 +108,63 @@ export function AppProvider({ children }) {
   const [error, setError] = useState(null)
   const [toasts, setToasts] = useState([])
 
-  // ---- Initial data + session restore ----
+  // ---- 1. Session Restore (Runs once on mount) ----
   useEffect(() => {
-    const bootstrap = async () => {
-      try {
-        const [studentsData, requirementsData, usersData, settingsData] = await Promise.all([
-          listStudents(),
-          listRequirements(),
-          listUsers(),
-          listSettings(),
-        ])
-        setStudents(studentsData)
-        setRequirements(requirementsData)
-        setUsers(usersData)
-        setSettings(deserializeSettings(settingsData))
-      } catch (err) {
-        console.error('Failed to fetch initial data:', err)
-        setError(err.message)
-      }
-
+    const initSession = async () => {
       try {
         const me = await getMe()
         setCurrentUser(me)
       } catch {
         setCurrentUser(null)
+      } finally {
+        setLoading(false)
       }
+    }
+    initSession()
+  }, [])
 
-      setLoading(false)
+  // ---- 2. Fetch Data (Runs when currentUser changes) ----
+  useEffect(() => {
+    if (!currentUser) {
+      // Clear data on logout
+      setStudents([])
+      setRequirements([])
+      setUsers([])
+      setSettings({})
+      setNotifications([])
+      return
     }
 
-    bootstrap()
-  }, [])
+    const fetchAllData = async () => {
+      try {
+        const [studentsData, requirementsData, usersData, settingsData, notificationsData] = await Promise.all([
+          listStudents(),
+          listRequirements(),
+          listUsers(),
+          listSettings(),
+          listNotifications(currentUser.id),
+        ])
+        setStudents(studentsData)
+        setRequirements(requirementsData)
+        setUsers(usersData)
+        setSettings(deserializeSettings(settingsData))
+        setNotifications(notificationsData)
+      } catch (err) {
+        console.error('Failed to fetch data:', err)
+        setError(err.message)
+      }
+    }
+
+    fetchAllData()
+
+    // ---- 3. Polling for Live Updates (Every 30 seconds) ----
+    // This ensures if Admin adds a student, Staff sees it without refreshing.
+    const intervalId = setInterval(() => {
+      fetchAllData()
+    }, 30000)
+
+    return () => clearInterval(intervalId)
+  }, [currentUser])
 
   // ---- Push: register the service worker once ----
   useEffect(() => {
@@ -147,27 +173,13 @@ export function AppProvider({ children }) {
     )
   }, [])
 
-  // ---- Push: re-bind this browser's subscription to the current user ----
-  // A single browser holds one push subscription. Every login re-POSTs it with
-  // the new user's ID so notifications route to whoever is signed in.
-  // This effect never prompts — the prompt comes from the Enable alerts button.
+  // ---- Push: re-bind this browser's subscription ----
   useEffect(() => {
     if (!currentUser || !pushSupported()) return
     if (Notification.permission !== 'granted') return
     subscribeToPush(currentUser.id).catch((err) =>
       console.warn('Push re-subscribe failed:', err)
     )
-  }, [currentUser])
-
-  // ---- Notifications: fetch the current user's inbox whenever the viewer changes ----
-  useEffect(() => {
-    if (!currentUser) {
-      setNotifications([])
-      return
-    }
-    listNotifications(currentUser.id)
-      .then(setNotifications)
-      .catch((err) => console.warn('Failed to load notifications:', err))
   }, [currentUser])
 
   const showToast = useCallback((message, type = 'success') => {
@@ -214,7 +226,6 @@ export function AppProvider({ children }) {
       console.warn('Logout request failed:', err)
     }
     setCurrentUser(null)
-    setNotifications([])
   }, [])
 
   const register = useCallback(async (data) => {

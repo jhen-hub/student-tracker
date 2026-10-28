@@ -59,7 +59,7 @@ export default function Sidebar({ mobileOpen, onCloseMobile }) {
   const sections = NAV_SECTIONS.filter((s) => s.roles.includes(role))
 
   const content = (
-    <div className="flex h-full flex-col bg-navy-900 text-white">
+    <div className="flex fixed w-64 h-full flex-col bg-navy-900 text-white">
       <div className="flex items-center gap-2.5 px-5 py-5">
         <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl">
           <img src={logo} alt="" className="h-full w-full" />

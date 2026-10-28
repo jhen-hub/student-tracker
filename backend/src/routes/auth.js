@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import bcrypt from 'bcrypt';
 import { pool } from '../../db.js';
 
 const router = Router();
@@ -17,11 +18,18 @@ router.post('/login', async (req, res, next) => {
     }
 
     const [rows] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
-    if (rows.length === 0 || rows[0].password !== password) {
+    if (rows.length === 0) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     const user = rows[0];
+    
+    // Compare the plaintext password with the hash in the database
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
     if (user.status !== 'Active') {
       return res.status(403).json({ error: 'Account is inactive' });
     }
@@ -72,7 +80,6 @@ router.get('/me', async (req, res, next) => {
   }
 });
 
-// Middleware for protecting other routes later
 export function requireAuth(req, res, next) {
   if (!req.session?.userId) {
     return res.status(401).json({ error: 'Not authenticated' });
