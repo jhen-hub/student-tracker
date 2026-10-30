@@ -37,6 +37,7 @@ export default function Students() {
   const [form, setForm] = useState(emptyForm)
   const [formErrors, setFormErrors] = useState({})
   const [confirmDeleteId, setConfirmDeleteId] = useState(null)
+  const [isSaving, setIsSaving] = useState(false)
 
   const yearLevels = ['All', ...new Set(students.map((s) => s.yearLevel))]
 
@@ -110,23 +111,26 @@ export default function Students() {
   }
 
   async function handleSave(e) {
-  e.preventDefault()
-  const v = validate()
-  setFormErrors(v)
-  if (Object.keys(v).length > 0) return
+    e.preventDefault()
+    const v = validate()
+    setFormErrors(v)
+    if (Object.keys(v).length > 0) return
 
-  try {
-    if (editingId) {
-      await updateStudent(editingId, form)
-    } else {
-      await addStudent(form)
+    try {
+      setIsSaving(true)
+      if (editingId) {
+        await updateStudent(editingId, form)
+      } else {
+        await addStudent(form)
+      }
+      setModalOpen(false)
+    } catch {
+      // AppContext already showed a "Failed to …" toast; keep the modal open
+      // so the user can fix the input without retyping.
+    } finally {
+      setIsSaving(false)
     }
-    setModalOpen(false)
-  } catch {
-    // AppContext already showed a "Failed to …" toast; keep the modal open
-    // so the user can fix the input without retyping.
   }
-}
 
   const SortIcon = ({ col }) =>
     sortKey === col ? (
@@ -265,7 +269,7 @@ export default function Students() {
         </div>
       )}
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? 'Edit Student' : 'Add Student'}>
+      <Modal open={modalOpen} onClose={isSaving ? () => {} : () => setModalOpen(false)} title={editingId ? 'Edit Student' : 'Add Student'}>
         <form onSubmit={handleSave} noValidate className="space-y-4">
           <div>
             <label className="mb-1 block text-sm font-medium text-ink-700">Full name</label>
@@ -333,11 +337,11 @@ export default function Students() {
           </div>
 
           <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={() => setModalOpen(false)} className="focus-ring rounded-lg border border-ink-300 px-4 py-2 text-sm font-medium text-ink-700 hover:bg-gray-50">
+            <button type="button" onClick={() => setModalOpen(false)} disabled={isSaving} className="focus-ring rounded-lg border border-ink-300 px-4 py-2 text-sm font-medium text-ink-700 hover:bg-gray-50">
               Cancel
             </button>
-            <button type="submit" className="focus-ring rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-700">
-              {editingId ? 'Save changes' : 'Add student'}
+            <button type="submit" disabled={isSaving} className="focus-ring rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-700">
+              {isSaving ? (editingId ? 'Updating...' : 'Adding...') : (editingId ? 'Save changes' : 'Add student')}
             </button>
           </div>
         </form>

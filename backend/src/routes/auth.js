@@ -31,7 +31,7 @@ router.post('/login', async (req, res, next) => {
     }
 
     if (user.status !== 'Active') {
-      return res.status(403).json({ error: 'Account is inactive' });
+      return res.status(403).json({ error: 'Your account is pending Admin approval or has been deactivated.' });
     }
 
     req.session.userId = user.id;

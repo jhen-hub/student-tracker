@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import { pool } from '../../db.js';
+import { broadcastUpdate } from '../socket.js';
 
 const router = Router();
 const stripPassword = (user) => {
@@ -40,28 +41,60 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-// POST /api/users - Create a new user (Admin function)
-router.post('/', async (req, res, next) => {
+// POST /api/users/register
+router.post('/register', async (req, res, next) => {
   try {
-    const { name, email, password, role, status, student_id } = req.body;
+    const { name, email, password, role, student_id } = req.body;
+    if (!name || !email || !password) return res.status(400).json({ error: 'Name, email, and password are required' });
 
-    if (!name || !email || !password || !role) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
+    const allowedRoles = ['Staff', 'Student'];
+    const chosenRole = allowedRoles.includes(role) ? role : 'Student';
+
+    const [existingUsers] = await pool.query('SELECT id FROM users WHERE email = ?', [email]);
+    if (existingUsers.length > 0) return res.status(400).json({ error: 'Email already exists' });
 
     // Hash the password before saving
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const [[{ maxId }]] = await pool.query(
-      "SELECT MAX(CAST(SUBSTRING(id, 5) AS UNSIGNED)) as maxId FROM users WHERE id LIKE 'USR-%'"
+      "SELECT MAX(CAST(SUBSTRING(id, 5) AS UNSIGNED)) AS maxId FROM users WHERE id LIKE 'USR-%'"
     );
     const nextId = maxId ? parseInt(maxId) + 1 : 1;
     const id = `USR-${nextId.toString().padStart(3, '0')}`;
 
+    // Staff require Admin approval (Inactive), Students are auto-approved (Active)
+    const initialStatus = chosenRole === 'Staff' ? 'Inactive' : 'Active';
+
     await pool.query(
       'INSERT INTO users (id, name, email, password, role, status, student_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [id, name, email, hashedPassword, role, status || 'Active', student_id || null]
+      [id, name, email, hashedPassword, chosenRole, initialStatus, student_id || null]
     );
+
+    // If it's a Staff account, notify the Admin
+    if (chosenRole === 'Staff') {
+      // 1. Generate Notification ID
+      const [[{ nMaxId }]] = await pool.query(
+        "SELECT MAX(CAST(SUBSTRING(id, 7) AS UNSIGNED)) AS nMaxId FROM notifications WHERE id LIKE 'NOTIF-%'"
+      );
+      const nNextId = nMaxId ? parseInt(nMaxId) + 1 : 1;
+      const notifId = `NOTIF-${nNextId.toString().padStart(3, '0')}`;
+      
+      // 2. Insert Notification
+      await pool.query(
+        'INSERT INTO notifications (id, recipient_type, recipient_value, title, message, notification_date) VALUES (?, ?, ?, ?, ?, ?)',
+        [
+          notifId, 
+          'Role', 
+          'Admin', 
+          'New Staff Registration', 
+          `${name} (${email}) has registered as Staff and requires your approval.`, 
+          new Date().toISOString().slice(0, 10)
+        ]
+      );
+
+      // 3. Live update
+      broadcastUpdate();
+    }
 
     const [newUser] = await pool.query('SELECT * FROM users WHERE id = ?', [id]);
     res.status(201).json(stripPassword(newUser[0]));

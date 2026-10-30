@@ -5,7 +5,7 @@ import Layout from '../components/Layout.jsx'
 import StatusBadge from '../components/StatusBadge.jsx'
 import RequirementChecklist from '../components/RequirementChecklist.jsx'
 import Modal from '../components/Modal.jsx'
-import { useApp, studentOverallStatus, studentCompletion } from '../context/AppContext.jsx'
+import { useApp, studentOverallStatus, studentCompletion, formatDateTime } from '../context/AppContext.jsx'
 
 export default function StudentDetails() {
   const { id } = useParams()
@@ -55,9 +55,13 @@ export default function StudentDetails() {
       (!u.student_id || u.student_id === student.id)
   )
 
-  const submitted = student.requirements.filter((r) => r.status === 'Submitted').length
-  const pending = student.requirements.filter((r) => r.status === 'Pending').length
-  const missing = student.requirements.filter((r) => r.status === 'Missing').length
+  const visibleRequirements = student.requirements.filter(
+    (r) => r.active === 1 || r.active === true || r.status !== 'Missing'
+  )
+
+  const submitted = visibleRequirements.filter((r) => r.status === 'Submitted').length
+  const pending = visibleRequirements.filter((r) => r.status === 'Pending').length
+  const missing = visibleRequirements.filter((r) => r.status === 'Missing').length
 
   function handleSaveEdit(e) {
     e.preventDefault()
@@ -214,7 +218,7 @@ export default function StudentDetails() {
           <div>
             <h3 className="mb-2 text-sm font-semibold text-ink-900">Requirements checklist</h3>
             <RequirementChecklist
-              requirements={student.requirements}
+              requirements={visibleRequirements}
               readOnly={readOnly}
               onStatusChange={(reqId, status) => updateRequirementStatus(student.id, reqId, status)}
             />
@@ -226,7 +230,7 @@ export default function StudentDetails() {
               {student.activity.map((a, i) => (
                 <li key={i} className="flex items-center justify-between px-4 py-2.5 text-sm">
                   <span className="text-ink-700">{a.text}</span>
-                  <span className="text-xs text-ink-500">{a.date}</span>
+                  <span className="text-xs text-ink-500">{formatDateTime(a.created_at || a.date)}</span>
                 </li>
               ))}
             </ul>

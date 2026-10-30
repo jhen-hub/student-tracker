@@ -9,6 +9,10 @@ export default function StudentRequirements() {
   const { currentUser, students } = useApp()
   const student = students.find((s) => s.id === currentUser?.student_id)
 
+  const visibleRequirements = student ? student.requirements.filter(
+    (r) => r.active === 1 || r.active === true || r.status !== 'Missing'
+  ) : []
+
   if (!student) {
     return (
       <Layout title="My Requirements">
@@ -43,7 +47,7 @@ export default function StudentRequirements() {
       </div>
 
       <h3 className="mb-2 text-sm font-semibold text-ink-900">Checklist</h3>
-      <RequirementChecklist requirements={student.requirements} readOnly />
+      <RequirementChecklist requirements={visibleRequirements} readOnly />
       <p className="mt-3 text-xs text-ink-500">
         Requirement statuses are updated by registrar staff once your documents are received and verified.
       </p>

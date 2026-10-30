@@ -3,7 +3,7 @@ import { Bell, BellOff, Trash2, Plus } from 'lucide-react'
 import Layout from '../components/Layout.jsx'
 import Modal from '../components/Modal.jsx'
 import EmptyState from '../components/EmptyState.jsx'
-import { useApp } from '../context/AppContext.jsx'
+import { useApp, formatDateTime } from '../context/AppContext.jsx'
 
 const ROLE_OPTIONS = ['Admin', 'Staff', 'Student']
 
@@ -30,6 +30,7 @@ export default function Notifications() {
 
   const [unreadOnly, setUnreadOnly] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
   const [form, setForm] = useState({
     scope: 'All',       // 'All' | 'Role' | 'User'
     role: 'Student',    // used when scope === 'Role'
@@ -67,6 +68,7 @@ export default function Notifications() {
     }
 
     try {
+      setIsSaving(true)
       await addNotification({
         title: `Reminder — ${titleSuffix}`,
         message: form.message || 'Please check the registrar for updates.',
@@ -77,6 +79,8 @@ export default function Notifications() {
       setModalOpen(false)
     } catch {
       // AppContext already showed the error toast
+    } finally {
+      setIsSaving(false)
     }
   }
 
@@ -114,7 +118,7 @@ export default function Notifications() {
               <div className="flex-1">
                 <div className="flex items-center justify-between gap-2">
                   <p className={`text-sm font-semibold ${n.read ? 'text-ink-700' : 'text-ink-900'}`}>{n.title}</p>
-                  <span className="shrink-0 text-xs text-ink-500">{n.date}</span>
+                  <span className="shrink-0 text-xs text-ink-500">{formatDateTime(n.created_at || n.date)}</span>
                 </div>
                 <p className="mt-1 text-sm text-ink-500">{n.message}</p>
                 <p className="mt-1 text-xs text-ink-500">
@@ -134,7 +138,7 @@ export default function Notifications() {
         </ul>
       )}
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Create Reminder">
+      <Modal open={modalOpen} onClose={isSaving ? () => { } : () => setModalOpen(false)} title="Create Reminder">
         <form onSubmit={handleCreate} className="space-y-4">
           <div>
             <label className="mb-1 block text-sm font-medium text-ink-700">Send to</label>
@@ -194,8 +198,10 @@ export default function Notifications() {
           </div>
 
           <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={() => setModalOpen(false)} className="focus-ring rounded-lg border border-ink-300 px-4 py-2 text-sm font-medium text-ink-700 hover:bg-gray-50">Cancel</button>
-            <button type="submit" className="focus-ring rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-700">Create reminder</button>
+            <button type="button" onClick={() => setModalOpen(false)} disabled={isSaving} className="focus-ring rounded-lg border border-ink-300 px-4 py-2 text-sm font-medium text-ink-700 hover:bg-gray-50">Cancel</button>
+            <button type="submit" disabled={isSaving} className="focus-ring rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-700">
+              {isSaving ? 'Creating...' : 'Create reminder'}
+            </button>
           </div>
         </form>
       </Modal>

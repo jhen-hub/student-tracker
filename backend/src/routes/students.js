@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { pool } from '../../db.js';
+import { broadcastUpdate } from '../socket.js';
 
 const router = Router();
 // ---------- Helpers ----------
-
 async function nextStudentId() {
   const [[{ maxId }]] = await pool.query(
     "SELECT MAX(CAST(SUBSTRING(id, 5) AS UNSIGNED)) AS maxId FROM students WHERE id LIKE 'STU-%'"
@@ -20,7 +20,7 @@ async function loadStudent(id) {
   const student = rows[0];
 
   const [requirements] = await pool.query(
-    `SELECT sr.*, rc.name AS name, rc.description
+    `SELECT sr.*, rc.name AS name, rc.description, rc.active AS active
        FROM student_requirements sr
        JOIN requirements_catalog rc ON sr.requirement_id = rc.id
       WHERE sr.student_id = ?`,
@@ -110,6 +110,7 @@ router.post('/', async (req, res, next) => {
     );
 
     const created = await loadStudent(id);
+    broadcastUpdate();
     res.status(201).json(created);
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
@@ -129,7 +130,7 @@ router.patch('/:id', async (req, res, next) => {
     delete updates.created_at;
     delete updates.updated_at;
 
-    const ALLOWED = [ 'name', 'email', 'contact', 'year_level',
+    const ALLOWED = ['name', 'email', 'contact', 'year_level',
       'section', 'status', 'enrolled_date'];
 
     const unknown = Object.keys(updates).filter((k) => !ALLOWED.includes(k));
@@ -166,6 +167,7 @@ router.patch('/:id', async (req, res, next) => {
     }
 
     const updated = await loadStudent(id);
+    broadcastUpdate();
     res.json(updated);
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {

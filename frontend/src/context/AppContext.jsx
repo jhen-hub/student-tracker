@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import { io } from 'socket.io-client' // <-- Added Socket.io Client
 import { loginSession, logoutSession, getMe } from '../api/services/authService'
 import {
   listUsers,
@@ -43,8 +44,12 @@ import { registerServiceWorker, subscribeToPush, pushSupported } from '../api/se
  * Calculate student completion percentage
  */
 export function studentCompletion(student) {
-  const total = student.requirements.length || 1
-  const submitted = student.requirements.filter(r => r.status === 'Submitted').length
+  const visibleReqs = student.requirements.filter(
+    r => r.active === 1 || r.active === true || r.status !== 'Missing'
+  )
+
+  const total = visibleReqs.length || 1
+  const submitted = visibleReqs.filter(r => r.status === 'Submitted').length
   return Math.round((submitted / total) * 100)
 }
 
@@ -52,7 +57,13 @@ export function studentCompletion(student) {
  * Determine overall student status based on requirements
  */
 export function studentOverallStatus(student) {
-  const { submitted, missing } = student.requirements.reduce(
+  const visibleReqs = student.requirements.filter(
+    r => r.active === 1 || r.active === true || r.status !== 'Missing'
+  )
+
+  if (visibleReqs.length === 0) return 'Complete'
+
+  const { submitted, missing } = visibleReqs.reduce(
     (acc, r) => {
       if (r.status === 'Submitted') acc.submitted += 1
       else if (r.status === 'Missing') acc.missing += 1
@@ -60,7 +71,8 @@ export function studentOverallStatus(student) {
     },
     { submitted: 0, missing: 0 }
   )
-  if (submitted === student.requirements.length) return 'Complete'
+
+  if (submitted === visibleReqs.length) return 'Complete'
   if (missing > 0) return 'Incomplete'
   return 'Pending'
 }
@@ -89,6 +101,21 @@ function deserializeSettings(rawArray) {
   return obj
 }
 
+export function formatDateTime(isoString) {
+  if (!isoString) return ''
+  const d = new Date(isoString)
+  if (isNaN(d.getTime())) return isoString
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  }).format(d)
+}
+
 function serializeSettingValue(value) {
   if (typeof value === 'boolean') return value ? 'true' : 'false'
   if (value !== null && typeof value === 'object') return JSON.stringify(value)
@@ -105,6 +132,7 @@ export function AppProvider({ children }) {
   const [settings, setSettings] = useState({})
   const [currentUser, setCurrentUser] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [dataLoaded, setDataLoaded] = useState(false) // true once the first fetch has finished
   const [error, setError] = useState(null)
   const [toasts, setToasts] = useState([])
 
@@ -116,14 +144,13 @@ export function AppProvider({ children }) {
         setCurrentUser(me)
       } catch {
         setCurrentUser(null)
-      } finally {
         setLoading(false)
       }
     }
     initSession()
   }, [])
 
-  // ---- 2. Fetch Data (Runs when currentUser changes) ----
+  // ---- 2. Fetch Data + Socket.io Live Updates ----
   useEffect(() => {
     if (!currentUser) {
       // Clear data on logout
@@ -132,10 +159,12 @@ export function AppProvider({ children }) {
       setUsers([])
       setSettings({})
       setNotifications([])
+      setDataLoaded(false)
       return
     }
 
     const fetchAllData = async () => {
+      setLoading(true)
       try {
         const [studentsData, requirementsData, usersData, settingsData, notificationsData] = await Promise.all([
           listStudents(),
@@ -152,18 +181,34 @@ export function AppProvider({ children }) {
       } catch (err) {
         console.error('Failed to fetch data:', err)
         setError(err.message)
+      } finally {
+        setLoading(false)
+        setDataLoaded(true)
       }
     }
 
+    // 1. Fetch immediately on login
     fetchAllData()
 
-    // ---- 3. Polling for Live Updates (Every 30 seconds) ----
-    // This ensures if Admin adds a student, Staff sees it without refreshing.
-    const intervalId = setInterval(() => {
-      fetchAllData()
-    }, 30000)
+    // 2. Setup Socket.io connection for instant updates
+    const socketUrl = import.meta.env.VITE_API_URL.replace('/api', '')
+    const socket = io(socketUrl, {
+      withCredentials: true,
+      transports: ['websocket', 'polling'] // Fallback to polling if WS is blocked
+    })
 
-    return () => clearInterval(intervalId)
+    socket.on('connect', () => {
+      console.log('Connected to live updates server')
+    })
+
+    socket.on('data_updated', () => {
+      fetchAllData()
+    })
+
+    // Cleanup on logout or unmount
+    return () => {
+      socket.disconnect()
+    }
   }, [currentUser])
 
   // ---- Push: register the service worker once ----
@@ -200,7 +245,6 @@ export function AppProvider({ children }) {
       setLoading(true)
       const user = await loginSession(email, password)
       setCurrentUser(user)
-      setLoading(false)
       return { ok: true, user }
     } catch (err) {
       setLoading(false)
@@ -393,17 +437,23 @@ export function AppProvider({ children }) {
     }
   }, [showToast])
 
-  const toggleRequirementActive = useCallback(async (id) => {
+  const toggleRequirementActive = useCallback(async (targetReq) => {
+    let previousRequirements;
+
+    setRequirements((prev) => {
+      previousRequirements = prev;
+      return prev.map((req) =>
+        req.id === targetReq.id ? { ...req, active: !targetReq.active } : req
+      );
+    });
+
     try {
-      setLoading(true)
-      const requirement = await apiGetRequirement(id)
-      await apiUpdateRequirement(id, { active: !requirement.active })
-      const updatedRequirements = await listRequirements()
-      setRequirements(updatedRequirements)
-      setLoading(false)
-      showToast('Requirement updated.')
+      await apiUpdateRequirement(targetReq.id, { active: !targetReq.active });
+      showToast(`Requirement ${!targetReq.active ? 'activated' : 'deactivated'}.`)
     } catch (err) {
-      setLoading(false)
+      if (previousRequirements) {
+        setRequirements(previousRequirements);
+      }
       showToast('Failed to toggle requirement', 'danger')
     }
   }, [showToast])
@@ -503,15 +553,22 @@ export function AppProvider({ children }) {
   }, [currentUser, showToast])
 
   const markNotificationRead = useCallback(async (id, read = true) => {
+    let previousNotifications;
+
+    setNotifications((prev) => {
+      previousNotifications = prev;
+      return prev.map((n) =>
+        n.id === id ? { ...n, read } : n
+      );
+    });
+
     try {
-      setLoading(true)
       await apiUpdateNotification(id, { read })
-      const updatedNotifications = await listNotifications(currentUser?.id)
-      setNotifications(updatedNotifications)
-      setLoading(false)
     } catch (err) {
-      setLoading(false)
-      showToast('Failed to update notification', 'danger')
+      if (previousNotifications) {
+        setNotifications(previousNotifications);
+      }
+      showToast('Failed to update notification', 'danger');
     }
   }, [currentUser, showToast])
 
@@ -556,6 +613,7 @@ export function AppProvider({ children }) {
     notifications,
     settings,
     currentUser,
+    dataLoaded,
     toasts,
     showToast,
     dismissToast,

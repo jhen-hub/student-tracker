@@ -1,5 +1,6 @@
 import webpush from 'web-push';
 import { pool } from '../../db.js';
+import crypto from 'crypto';
 
 webpush.setVapidDetails(
   process.env.VAPID_SUBJECT || 'mailto:admin@registrar.edu',
@@ -13,26 +14,26 @@ export async function saveSubscription(userId, subscription, userAgent) {
     throw new Error('Invalid subscription payload');
   }
 
-  // Deterministic id per (user, endpoint) so the same user re-subscribing
-  // updates their existing row rather than creating a duplicate. Different
-  // users on the same browser get separate rows.
-  const id = `PS-${Buffer.from(`${userId}:${endpoint}`).toString('base64url').slice(0, 44)}`;
+  const id = 'PS-' + crypto.createHash('sha256').update(endpoint).digest('hex').slice(0, 40);
 
   await pool.query(
     `INSERT INTO push_subscriptions
-       (id, user_id, endpoint, keys_p256dh, keys_auth, user_agent, last_seen_at)
-     VALUES (?, ?, ?, ?, ?, ?, NOW())
-     ON DUPLICATE KEY UPDATE
-       keys_p256dh  = VALUES(keys_p256dh),
-       keys_auth    = VALUES(keys_auth),
-       user_agent   = VALUES(user_agent),
-       last_seen_at = NOW()`,
+     (id, user_id, endpoint, keys_p256dh, keys_auth, user_agent, last_seen_at)
+   VALUES (?, ?, ?, ?, ?, ?, NOW())
+   ON DUPLICATE KEY UPDATE
+     user_id      = VALUES(user_id),
+     endpoint     = VALUES(endpoint),
+     keys_p256dh  = VALUES(keys_p256dh),
+     keys_auth    = VALUES(keys_auth),
+     user_agent   = VALUES(user_agent),
+     last_seen_at = NOW()`,
     [id, userId, endpoint, keys.p256dh, keys.auth, userAgent || null]
   );
 }
 
 export async function sendToUsers(userIds, payload) {
   if (!userIds || userIds.length === 0) {
+    console.log(`[push] Aborting: No user IDs provided.`);
     return;
   }
 
@@ -44,15 +45,16 @@ export async function sendToUsers(userIds, payload) {
     userIds
   );
 
-  // Multiple users can share one browser endpoint. Deduplicate so that
-  // browser receives one push, not one per matching user.
+  if (rows.length === 0) {
+    console.log(`[push] Aborting: Users have not subscribed to push notifications.`);
+    return;
+  }
+
   const byEndpoint = new Map();
   for (const row of rows) {
     if (!byEndpoint.has(row.endpoint)) byEndpoint.set(row.endpoint, row);
   }
   const targets = [...byEndpoint.values()];
-
-  if (targets.length === 0) return;
 
   const body = JSON.stringify(payload);
 
@@ -75,7 +77,7 @@ export async function sendToUsers(userIds, payload) {
     if (res.status === 'rejected') {
       const code = res.reason?.statusCode;
       console.error(
-        `[push] send failed for user ${targets[i].user_id}: status=${code} body=${res.reason?.body || res.reason?.message}`
+        `[push] FAILED for user ${targets[i].user_id}: status=${code} body=${JSON.stringify(res.reason?.body || res.reason?.message)}`
       );
       if (code === 404 || code === 410) {
         deadIds.push(targets[i].id);

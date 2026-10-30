@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
+import { subscribeToPush } from '../api/services/pushService.js' // <-- Import added
 import logo from '../assets/logo.svg'
 
 export default function Login() {
@@ -12,6 +13,7 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false)
   const [role, setRole] = useState('Admin')
   const [error, setError] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   function validate() {
     if (!email.trim()) return 'Email is required.'
@@ -28,20 +30,42 @@ export default function Login() {
       return
     }
 
-    const result = await login(email, password)   // wait for the Promise
+    setIsSubmitting(true)
+    const result = await login(email, password)
+    
     if (!result.ok) {
       setError(result.error || 'Sign-in failed.')
+      setIsSubmitting(false)
       return
     }
+
+    // Trigger Push Notification prompt on successful login
+    try {
+      await subscribeToPush(result.user.id)
+    } catch (err) {
+      console.log('Push subscription skipped:', err.message)
+    }
+
     navigate(result.user.role === 'Student' ? '/student/dashboard' : '/dashboard')
   }
 
   async function handleDemoLogin() {
-    const result = await loginAsDemo(role)        // wait for the Promise
+    setIsSubmitting(true)
+    const result = await loginAsDemo(role)
+    
     if (!result.ok) {
       setError(result.error || 'Demo sign-in failed.')
+      setIsSubmitting(false)
       return
     }
+
+    // Trigger Push Notification prompt on successful demo login
+    try {
+      await subscribeToPush(result.user.id)
+    } catch (err) {
+      console.log('Push subscription skipped:', err.message)
+    }
+
     navigate(result.user.role === 'Student' ? '/student/dashboard' : '/dashboard')
   }
 
@@ -67,7 +91,8 @@ export default function Login() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@registrar.edu"
-                className="focus-ring w-full rounded-lg border border-ink-300 px-3 py-2 text-sm"
+                disabled={isSubmitting}
+                className="focus-ring w-full rounded-lg border border-ink-300 px-3 py-2 text-sm disabled:opacity-50"
               />
             </div>
             <div>
@@ -78,7 +103,8 @@ export default function Login() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="focus-ring w-full rounded-lg border border-ink-300 px-3 py-2 pr-10 text-sm"
+                  disabled={isSubmitting}
+                  className="focus-ring w-full rounded-lg border border-ink-300 px-3 py-2 pr-10 text-sm disabled:opacity-50"
                 />
                 <button
                   type="button"
@@ -94,9 +120,10 @@ export default function Login() {
 
             <button
               type="submit"
-              className="focus-ring w-full rounded-lg bg-accent-600 py-2.5 text-sm font-semibold text-white hover:bg-accent-700"
+              disabled={isSubmitting}
+              className="focus-ring w-full rounded-lg bg-accent-600 py-2.5 text-sm font-semibold text-white hover:bg-accent-700 disabled:opacity-80"
             >
-              Sign in
+              {isSubmitting ? 'Signing in...' : 'Sign in'}
             </button>
           </form>
 
@@ -110,7 +137,8 @@ export default function Login() {
             <select
               value={role}
               onChange={(e) => setRole(e.target.value)}
-              className="focus-ring w-full rounded-lg border border-ink-300 px-3 py-2 text-sm"
+              disabled={isSubmitting}
+              className="focus-ring w-full rounded-lg border border-ink-300 px-3 py-2 text-sm disabled:opacity-50"
             >
               <option value="Admin">Demo login as Admin</option>
               <option value="Staff">Demo login as Staff</option>
@@ -119,9 +147,10 @@ export default function Login() {
             <button
               onClick={handleDemoLogin}
               type="button"
-              className="focus-ring w-full rounded-lg border border-accent-600 py-2.5 text-sm font-semibold text-accent-700 hover:bg-accent-50"
+              disabled={isSubmitting}
+              className="focus-ring w-full rounded-lg border border-accent-600 py-2.5 text-sm font-semibold text-accent-700 hover:bg-accent-50 disabled:opacity-80"
             >
-              Continue as demo {role}
+              {isSubmitting ? 'Continuing...' : `Continue as demo ${role}`}
             </button>
           </div>
 

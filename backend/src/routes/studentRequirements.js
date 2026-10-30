@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../../db.js';
+import { broadcastUpdate } from '../socket.js';
 
 const router = Router();
 // ---------- Helpers ----------
@@ -106,6 +107,7 @@ router.patch('/:studentId/:requirementId/status', async (req, res, next) => {
       'SELECT * FROM student_requirements WHERE student_id = ? AND requirement_id = ?',
       [studentId, requirementId]
     );
+    broadcastUpdate();
     res.json(updated[0]);
   } catch (err) {
     next(err);

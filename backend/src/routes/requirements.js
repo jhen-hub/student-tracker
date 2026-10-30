@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../../db.js';
 import { sendToRole } from '../services/pushService.js';
+import { broadcastUpdate } from '../socket.js';
 
 const router = Router();
 // ---------- Helpers ----------
@@ -98,6 +99,7 @@ router.post('/', async (req, res, next) => {
       );
     }
 
+    broadcastUpdate();
     res.status(201).json(newRequirement[0]);
   } catch (err) {
     await conn.rollback();
@@ -111,6 +113,7 @@ router.post('/', async (req, res, next) => {
 });
 
 router.patch('/:id', async (req, res, next) => {
+  const conn = await pool.getConnection();
   try {
     const { id } = req.params;
     const updates = { ...req.body };
@@ -123,31 +126,57 @@ router.patch('/:id', async (req, res, next) => {
 
     const unknown = Object.keys(updates).filter((k) => !ALLOWED.includes(k));
     if (unknown.length > 0) {
+      conn.release();
       return res.status(400).json({ error: `Unknown fields: ${unknown.join(', ')}` });
     }
 
     const fields = Object.keys(updates);
     if (fields.length === 0) {
+      conn.release();
       return res.status(400).json({ error: 'No valid fields to update' });
     }
 
+    await conn.beginTransaction();
+
     const setClause = fields.map((f) => `\`${f}\` = ?`).join(', ');
-    const [result] = await pool.query(
+    const [result] = await conn.query(
       `UPDATE requirements_catalog SET ${setClause} WHERE id = ?`,
       [...fields.map((f) => updates[f]), id]
     );
 
     if (result.affectedRows === 0) {
+      await conn.rollback();
+      conn.release();
       return res.status(404).json({ error: 'Requirement not found' });
     }
 
-    const [updated] = await pool.query(
+    // ↓↓↓ NEW BACK-FILL LOGIC ↓↓↓
+    // If the requirement is being toggled to Active, assign it to all active students
+    if (updates.active === true || updates.active === 1) {
+      const [students] = await conn.query("SELECT id FROM students WHERE status = 'Active'");
+      if (students.length > 0) {
+        const values = students.map((s) => [`SR-${s.id}-${id}`, s.id, id, 'Missing', null]);
+        // INSERT IGNORE prevents errors if the student already has this requirement
+        await conn.query(
+          'INSERT IGNORE INTO student_requirements (id, student_id, requirement_id, status, submitted_at) VALUES ?',
+          [values]
+        );
+      }
+    }
+
+    await conn.commit();
+
+    const [updated] = await conn.query(
       'SELECT * FROM requirements_catalog WHERE id = ?',
       [id]
     );
+    broadcastUpdate();
     res.json(updated[0]);
   } catch (err) {
+    await conn.rollback();
     next(err);
+  } finally {
+    conn.release();
   }
 });
 
@@ -160,6 +189,7 @@ router.delete('/:id', async (req, res, next) => {
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'Requirement not found' });
     }
+    broadcastUpdate();
     res.status(204).send();
   } catch (err) {
     next(err);

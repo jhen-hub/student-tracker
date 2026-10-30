@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../../db.js';
 import { sendToUsers } from '../services/pushService.js';
+import { broadcastUpdate } from '../socket.js';
 
 const router = Router();
 
@@ -39,13 +40,13 @@ async function resolveRecipients(type, value) {
 
 // ---------- Routes ----------
 
-// GET /api/notifications?user_id=USR-001
-// Without user_id, returns everything (admin/debug view).
+// GET /api/notifications
 router.get('/', async (req, res, next) => {
   try {
-    const { user_id } = req.query;
+    // Use session ID if available, fallback to query param
+    const viewerId = req.session?.userId || req.query.user_id;
 
-    if (!user_id) {
+    if (!viewerId) {
       const [rows] = await pool.query(
         'SELECT * FROM notifications ORDER BY notification_date DESC, created_at DESC'
       );
@@ -54,19 +55,22 @@ router.get('/', async (req, res, next) => {
 
     const [[viewer]] = await pool.query(
       'SELECT id, role FROM users WHERE id = ?',
-      [user_id]
+      [viewerId]
     );
     if (!viewer) {
-      return res.status(400).json({ error: 'Unknown user_id' });
+      return res.status(400).json({ error: 'Unknown user' });
     }
 
+    // LEFT JOIN to check if this specific user read the notification
     const [rows] = await pool.query(
-      `SELECT * FROM notifications
-        WHERE recipient_type = 'All'
-           OR (recipient_type = 'Role' AND recipient_value = ?)
-           OR (recipient_type = 'User' AND recipient_value = ?)
-        ORDER BY notification_date DESC, created_at DESC`,
-      [viewer.role, viewer.id]
+      `SELECT n.*, IF(nr.user_id IS NOT NULL, 1, 0) AS \`read\`
+       FROM notifications n
+       LEFT JOIN notification_reads nr ON n.id = nr.notification_id AND nr.user_id = ?
+       WHERE n.recipient_type = 'All'
+          OR (n.recipient_type = 'Role' AND n.recipient_value = ?)
+          OR (n.recipient_type = 'User' AND n.recipient_value = ?)
+       ORDER BY n.notification_date DESC, n.created_at DESC`,
+      [viewerId, viewer.role, viewerId]
     );
     res.json(rows);
   } catch (err) {
@@ -102,25 +106,15 @@ router.post('/', async (req, res, next) => {
     if (!title) {
       return res.status(400).json({ error: 'Missing required field: title' });
     }
-    if (!['All', 'Role', 'User'].includes(recipient_type)) {
-      return res.status(400).json({ error: 'recipient_type must be All, Role, or User' });
-    }
-    if (recipient_type === 'Role' && !['Admin', 'Staff', 'Student'].includes(recipient_value)) {
-      return res.status(400).json({ error: 'recipient_value must be Admin, Staff, or Student' });
-    }
-    if (recipient_type === 'User' && !recipient_value) {
-      return res.status(400).json({ error: 'recipient_value (user id) is required for User recipient_type' });
-    }
-
+    
     const notification_date =
       req.body.notification_date || new Date().toISOString().slice(0, 10);
-    const read = req.body.read !== undefined ? !!req.body.read : false;
 
     const id = await nextNotificationId();
 
     await pool.query(
-      'INSERT INTO notifications (id, recipient_type, recipient_value, title, message, notification_date, `read`) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [id, recipient_type, recipient_value, title, message || null, notification_date, read]
+      'INSERT INTO notifications (id, recipient_type, recipient_value, title, message, notification_date) VALUES (?, ?, ?, ?, ?, ?)',
+      [id, recipient_type, recipient_value, title, message || null, notification_date]
     );
 
     const [newNotification] = await pool.query(
@@ -128,14 +122,13 @@ router.post('/', async (req, res, next) => {
       [id]
     );
 
-    // Fire-and-forget push, with loud logging at every decision point.
+    broadcastUpdate(); // Live update for UI
+
+    // Fire-and-forget push
     (async () => {
       try {
         const userIds = await resolveRecipients(recipient_type, recipient_value);
-
-        if (userIds.length === 0) {
-          return;
-        }
+        if (userIds.length === 0) return;
 
         const targetUrl =
           recipient_type === 'Role' && recipient_value === 'Student'
@@ -148,7 +141,6 @@ router.post('/', async (req, res, next) => {
           url: targetUrl,
           tag: `notification-${id}`,
         });
-
       } catch (pushErr) {
         console.error('[push] failed for notification', id, pushErr);
       }
@@ -163,40 +155,47 @@ router.post('/', async (req, res, next) => {
   }
 });
 
+// PATCH /api/notifications/:id
 router.patch('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const updates = { ...req.body };
+    const { read } = req.body;
+    
+    // Get user ID from session or body
+    const viewerId = req.session?.userId || req.body.user_id;
 
-    delete updates.id;
-    delete updates.created_at;
-
-    const ALLOWED = ['title', 'message', 'notification_date', 'read'];
-
-    const unknown = Object.keys(updates).filter((k) => !ALLOWED.includes(k));
-    if (unknown.length > 0) {
-      return res.status(400).json({ error: `Unknown fields: ${unknown.join(', ')}` });
+    if (typeof read !== 'boolean' || !viewerId) {
+      return res.status(400).json({ error: 'read (boolean) and user context are required' });
     }
 
-    const fields = Object.keys(updates);
-    if (fields.length === 0) {
-      return res.status(400).json({ error: 'No valid fields to update' });
+    if (read) {
+      // Mark as read (insert a row if it doesn't exist)
+      await pool.query(
+        'INSERT IGNORE INTO notification_reads (notification_id, user_id) VALUES (?, ?)',
+        [id, viewerId]
+      );
+    } else {
+      // Mark as unread (remove the row)
+      await pool.query(
+        'DELETE FROM notification_reads WHERE notification_id = ? AND user_id = ?',
+        [id, viewerId]
+      );
     }
 
-    const setClause = fields.map((f) => `\`${f}\` = ?`).join(', ');
-    const [result] = await pool.query(
-      `UPDATE notifications SET ${setClause} WHERE id = ?`,
-      [...fields.map((f) => updates[f]), id]
+    broadcastUpdate(); // Live update for UI
+
+    // Return the specific user's updated view of the notification
+    const [updated] = await pool.query(
+      `SELECT n.*, IF(nr.user_id IS NOT NULL, 1, 0) AS \`read\`
+       FROM notifications n
+       LEFT JOIN notification_reads nr ON n.id = nr.notification_id AND nr.user_id = ?
+       WHERE n.id = ?`,
+      [viewerId, id]
     );
 
-    if (result.affectedRows === 0) {
+    if (updated.length === 0) {
       return res.status(404).json({ error: 'Notification not found' });
     }
-
-    const [updated] = await pool.query(
-      'SELECT * FROM notifications WHERE id = ?',
-      [id]
-    );
     res.json(updated[0]);
   } catch (err) {
     next(err);
@@ -212,6 +211,7 @@ router.delete('/:id', async (req, res, next) => {
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'Notification not found' });
     }
+    broadcastUpdate();
     res.status(204).send();
   } catch (err) {
     next(err);

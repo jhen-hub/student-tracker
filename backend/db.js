@@ -13,8 +13,8 @@ if (process.env.DATABASE_URL) {
     port: url.port || 3306,
     user: url.username,
     password: url.password,
-    database: url.pathname.substring(1), // removes the leading '/'
-    ssl: { rejectUnauthorized: false }, // Required for most cloud DBs
+    database: url.pathname.substring(1), 
+    ssl: { rejectUnauthorized: false },
   };
 } else {
   dbConfig = {

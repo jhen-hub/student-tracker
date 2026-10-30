@@ -10,8 +10,8 @@ self.addEventListener('push', (event) => {
 
   const options = {
     body: payload.body || '',
-    icon: '/logo.svg',
-    badge: '/logo.svg',
+    icon: './logo.svg',
+    badge: './logo.svg',
     tag: payload.tag || 'registrar-notification',
     data: { url: payload.url || '/' },
   };

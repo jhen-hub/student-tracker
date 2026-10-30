@@ -17,6 +17,7 @@ export default function Register() {
   })
   const [errors, setErrors] = useState({})
   const [success, setSuccess] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }))
@@ -40,10 +41,12 @@ export default function Register() {
     setErrors(v)
     if (Object.keys(v).length > 0) return
 
+    setIsSubmitting(true)
     const fullName = `${form.firstName.trim()} ${form.lastName.trim()}`.trim()
     const result = await register({ ...form, name: fullName })
     if (!result.ok) {
       setErrors({ email: result.error || 'Registration failed.' })
+      setIsSubmitting(false)
       return
     }
     setSuccess(true)
@@ -59,7 +62,9 @@ export default function Register() {
           </div>
           <h2 className="font-display text-lg font-semibold text-ink-900">Account created</h2>
           <p className="mt-1.5 text-sm text-ink-500">
-            This is a demo account stored in your browser. Redirecting you to sign in…
+            {form.role === 'Staff'
+              ? 'Your Staff account has been created and is pending Admin approval. You will be able to sign in once approved.'
+              : 'Your account has been created successfully. Redirecting you to sign in…'}
           </p>
         </div>
       </div>
@@ -148,9 +153,10 @@ export default function Register() {
 
           <button
             type="submit"
+            disabled={isSubmitting}
             className="focus-ring w-full rounded-lg bg-accent-600 py-2.5 text-sm font-semibold text-white hover:bg-accent-700"
           >
-            Create account
+            {isSubmitting ? 'Creating account...' : 'Create account'}
           </button>
         </form>
 

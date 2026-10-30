@@ -17,6 +17,7 @@ export default function Requirements() {
   const [form, setForm] = useState(emptyForm)
   const [error, setError] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState(null)
+  const [isSaving, setIsSaving] = useState(false)
 
   function openAdd() {
     setEditingId(null)
@@ -39,11 +40,14 @@ export default function Requirements() {
       return
     }
     try {
+      setIsSaving(true)
       if (editingId) await updateRequirement(editingId, form)
       else await addRequirement(form)
       setModalOpen(false)
     } catch {
       // keep modal open
+    } finally {
+      setIsSaving(false)
     }
   }
 
@@ -78,7 +82,7 @@ export default function Requirements() {
                     type="checkbox"
                     checked={r.active}
                     disabled={!canManage}
-                    onChange={() => toggleRequirementActive(r.id)}
+                    onChange={() => toggleRequirementActive(r)}
                     className="peer sr-only"
                   />
                   <div className="h-5 w-9 rounded-full bg-gray-300 transition-colors peer-checked:bg-accent-500" />
@@ -106,7 +110,7 @@ export default function Requirements() {
         </div>
       )}
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? 'Edit Requirement' : 'Add Requirement'}>
+      <Modal open={modalOpen} onClose={isSaving ? () => { } : () => setModalOpen(false)} title={editingId ? 'Edit Requirement' : 'Add Requirement'}>
         <form onSubmit={handleSave} className="space-y-4">
           <div>
             <label className="mb-1 block text-sm font-medium text-ink-700">Requirement name</label>
@@ -128,8 +132,10 @@ export default function Requirements() {
           </div>
           {error && <p className="text-xs text-rose-600">{error}</p>}
           <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={() => setModalOpen(false)} className="focus-ring rounded-lg border border-ink-300 px-4 py-2 text-sm font-medium text-ink-700 hover:bg-gray-50">Cancel</button>
-            <button type="submit" className="focus-ring rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-700">{editingId ? 'Save changes' : 'Add requirement'}</button>
+            <button type="button" onClick={() => setModalOpen(false)} disabled={isSaving} className="focus-ring rounded-lg border border-ink-300 px-4 py-2 text-sm font-medium text-ink-700 hover:bg-gray-50">Cancel</button>
+            <button type="submit" disabled={isSaving} className="focus-ring rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-700">
+              {isSaving ? (editingId ? 'Saving...' : 'Adding...') : (editingId ? 'Save changes' : 'Add requirement')}
+            </button>
           </div>
         </form>
       </Modal>

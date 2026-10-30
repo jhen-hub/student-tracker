@@ -78,8 +78,17 @@ CREATE TABLE notifications (
     title VARCHAR(255) NOT NULL,
     message TEXT,
     notification_date DATE NOT NULL,
-    `read` BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Track which specific user read which notification
+CREATE TABLE notification_reads (
+    notification_id VARCHAR(50) NOT NULL,
+    user_id VARCHAR(50) NOT NULL,
+    read_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (notification_id, user_id),
+    FOREIGN KEY (notification_id) REFERENCES notifications(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE TABLE push_subscriptions (
@@ -128,7 +137,7 @@ INSERT INTO requirements_catalog (id, name, description, active) VALUES
 
 -- Users (inserted BEFORE students to satisfy students.user_id FK)
 INSERT INTO users (id, name, email, password, role, status, student_id) VALUES
-('USR-001', 'Noel Montecillo', 'admin@registrar.edu', 'admin123', 'Admin', 'Active', NULL),
+('USR-001', 'Admin', 'admin@registrar.edu', 'admin123', 'Admin', 'Active', NULL),
 ('USR-002', 'Grace Lim', 'staff@registrar.edu', 'staff123', 'Staff', 'Active', NULL),
 ('USR-003', 'Juan Dela Cruz', 'student@registrar.edu', 'student123', 'Student', 'Active', 'STU-001'),
 ('USR-004', 'Ramon Diaz', 'ramon.diaz@registrar.edu', 'staff123', 'Staff', 'Inactive', NULL);

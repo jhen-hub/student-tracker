@@ -8,7 +8,8 @@ import ConfirmDialog from '../components/ConfirmDialog.jsx'
 import EmptyState from '../components/EmptyState.jsx'
 import { useApp } from '../context/AppContext.jsx'
 
-const emptyForm = { name: '', email: '', role: 'Staff', password: '' }
+// 1. Added status to emptyForm
+const emptyForm = { name: '', email: '', role: 'Staff', password: '', status: 'Active' }
 
 export default function Users() {
   const { users, addUser, updateUser, deleteUser, toggleUserStatus, currentUser } = useApp()
@@ -20,6 +21,7 @@ export default function Users() {
   const [form, setForm] = useState(emptyForm)
   const [error, setError] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState(null)
+  const [isSaving, setIsSaving] = useState(false)
 
   const filtered = useMemo(() => {
     return users.filter((u) => {
@@ -38,7 +40,8 @@ export default function Users() {
 
   function openEdit(u) {
     setEditingId(u.id)
-    setForm({ name: u.name, email: u.email, role: u.role, password: '' })
+    // 2. Populate the status field
+    setForm({ name: u.name, email: u.email, role: u.role, password: '', status: u.status })
     setError('')
     setModalOpen(true)
   }
@@ -50,13 +53,16 @@ export default function Users() {
       return
     }
     try {
+      setIsSaving(true)
       if (editingId) {
-        const patch = { name: form.name, email: form.email, role: form.role }
+        // 3. Include status in the patch payload
+        const patch = { name: form.name, email: form.email, role: form.role, status: form.status }
         if (form.password) patch.password = form.password
         await updateUser(editingId, patch)
       } else {
         if (!form.password) {
           setError('Password is required for new users.')
+          setIsSaving(false)
           return
         }
         await addUser(form)
@@ -64,6 +70,8 @@ export default function Users() {
       setModalOpen(false)
     } catch {
       // keep modal open
+    } finally {
+      setIsSaving(false)
     }
   }
 
@@ -134,7 +142,7 @@ export default function Users() {
         </div>
       )}
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? 'Edit User' : 'Add User'}>
+      <Modal open={modalOpen} onClose={isSaving ? () => { } : () => setModalOpen(false)} title={editingId ? 'Edit User' : 'Add User'}>
         <form onSubmit={handleSave} className="space-y-4">
           <div>
             <label className="mb-1 block text-sm font-medium text-ink-700">Full name</label>
@@ -144,6 +152,8 @@ export default function Users() {
             <label className="mb-1 block text-sm font-medium text-ink-700">Email</label>
             <input value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} className="focus-ring w-full rounded-lg border border-ink-300 px-3 py-2 text-sm" />
           </div>
+
+          {/* 4. Added Status dropdown in a 2-column grid with Role */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="mb-1 block text-sm font-medium text-ink-700">Role</label>
@@ -154,14 +164,25 @@ export default function Users() {
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink-700">{editingId ? 'New password (optional)' : 'Password'}</label>
-              <input type="password" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} className="focus-ring w-full rounded-lg border border-ink-300 px-3 py-2 text-sm" />
+              <label className="mb-1 block text-sm font-medium text-ink-700">Status</label>
+              <select value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))} className="focus-ring w-full rounded-lg border border-ink-300 px-3 py-2 text-sm">
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
             </div>
           </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-ink-700">{editingId ? 'New password (optional)' : 'Password'}</label>
+            <input type="password" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} className="focus-ring w-full rounded-lg border border-ink-300 px-3 py-2 text-sm" />
+          </div>
+
           {error && <p className="text-xs text-rose-600">{error}</p>}
           <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={() => setModalOpen(false)} className="focus-ring rounded-lg border border-ink-300 px-4 py-2 text-sm font-medium text-ink-700 hover:bg-gray-50">Cancel</button>
-            <button type="submit" className="focus-ring rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-700">{editingId ? 'Save changes' : 'Add user'}</button>
+            <button type="button" onClick={() => setModalOpen(false)} disabled={isSaving} className="focus-ring rounded-lg border border-ink-300 px-4 py-2 text-sm font-medium text-ink-700 hover:bg-gray-50">Cancel</button>
+            <button type="submit" disabled={isSaving} className="focus-ring rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-700">
+              {isSaving ? (editingId ? 'Saving...' : 'Adding...') : (editingId ? 'Save changes' : 'Add user')}
+            </button>
           </div>
         </form>
       </Modal>

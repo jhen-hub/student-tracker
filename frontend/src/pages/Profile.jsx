@@ -14,14 +14,20 @@ export default function Profile() {
   const [pwError, setPwError] = useState('')
   const [pwSaved, setPwSaved] = useState(false)
 
+  const [isSavingInfo, setIsSavingInfo] = useState(false)
+  const [isSavingPw, setIsSavingPw] = useState(false)
+
   async function handleInfoSave(e) {
     e.preventDefault()
     try {
+      setIsSavingInfo(true)
       await updateUser(currentUser.id, { name: info.name, email: info.email })
       setInfoSaved(true)
       setTimeout(() => setInfoSaved(false), 2000)
     } catch {
       // toast already fired
+    } finally {
+      setIsSavingInfo(false)
     }
   }
 
@@ -41,14 +47,17 @@ export default function Profile() {
       return
     }
 
+    setIsSavingPw(true)
     const result = await changePassword(currentUser.id, pwForm.current, pwForm.next)
     if (!result.ok) {
       setPwError(result.error)
+      setIsSavingPw(false)
       return
     }
 
     setPwForm({ current: '', next: '', confirm: '' })
     setPwSaved(true)
+    setIsSavingPw(false)
     setTimeout(() => setPwSaved(false), 2000)
   }
 
@@ -90,8 +99,8 @@ export default function Profile() {
               </div>
             </div>
             <div className="mt-4 flex items-center gap-3">
-              <button type="submit" className="focus-ring rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-700">
-                Save changes
+              <button type="submit" disabled={isSavingInfo} className="focus-ring rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-700">
+                {isSavingInfo ? 'Saving...' : 'Save changes'}
               </button>
               {infoSaved && <span className="text-sm text-emerald-600">Saved.</span>}
             </div>
@@ -130,8 +139,8 @@ export default function Profile() {
             </div>
             {pwError && <p className="mt-3 text-sm text-rose-600">{pwError}</p>}
             <div className="mt-4 flex items-center gap-3">
-              <button type="submit" className="focus-ring rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-700">
-                Update password
+              <button type="submit" disabled={isSavingPw}  className="focus-ring rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-700">
+                {isSavingPw ? 'Updating...' : 'Update password'}
               </button>
               {pwSaved && <span className="text-sm text-emerald-600">Password updated.</span>}
             </div>
