@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Settings as SettingsIcon, Bell, Palette } from 'lucide-react'
+import { Settings as SettingsIcon, Bell, Palette, Loader2 } from 'lucide-react' // <-- Added Loader2
 import Layout from '../components/Layout.jsx'
 import { useApp } from '../context/AppContext.jsx'
 
@@ -7,6 +7,7 @@ export default function Settings() {
   const { settings, updateSettings, requirements } = useApp()
   const [form, setForm] = useState(settings)
   const [saved, setSaved] = useState(false)
+  const [isSaving, setSaving] = useState(false)
 
   useEffect(() => {
     setForm(settings)
@@ -14,9 +15,16 @@ export default function Settings() {
 
   async function handleSave(e) {
     e.preventDefault()
-    await updateSettings(form)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    setSaving(true)
+    try {
+      await updateSettings(form)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch (err) {
+      // AppContext already showed the error toast
+    } finally {
+      setSaving(false)
+    }
   }
 
   function toggleDefaultReq(id) {
@@ -102,8 +110,13 @@ export default function Settings() {
         </div>
 
         <div className="flex items-center gap-3">
-          <button type="submit" className="focus-ring rounded-lg bg-accent-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-accent-700">
-            Save settings
+          {/* Updated Button with Loader */}
+          <button 
+            type="submit" 
+            disabled={isSaving} 
+            className="focus-ring flex items-center justify-center gap-2 rounded-lg bg-accent-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-accent-700 disabled:opacity-80"
+          >
+            {isSaving ? 'Saving...' : 'Save settings'}
           </button>
           {saved && <span className="text-sm text-emerald-600">Settings saved.</span>}
         </div>
