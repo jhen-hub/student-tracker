@@ -127,33 +127,6 @@ export default function Login() {
             </button>
           </form>
 
-          <div className="my-5 flex items-center gap-3 text-xs text-ink-500">
-            <div className="h-px flex-1 bg-ink-300/60" />
-            or try a demo account
-            <div className="h-px flex-1 bg-ink-300/60" />
-          </div>
-
-          <div className="space-y-3">
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              disabled={isSubmitting}
-              className="focus-ring w-full rounded-lg border border-ink-300 px-3 py-2 text-sm disabled:opacity-50"
-            >
-              <option value="Admin">Demo login as Admin</option>
-              <option value="Staff">Demo login as Staff</option>
-              <option value="Student">Demo login as Student</option>
-            </select>
-            <button
-              onClick={handleDemoLogin}
-              type="button"
-              disabled={isSubmitting}
-              className="focus-ring w-full rounded-lg border border-accent-600 py-2.5 text-sm font-semibold text-accent-700 hover:bg-accent-50 disabled:opacity-80"
-            >
-              {isSubmitting ? 'Continuing...' : `Continue as demo ${role}`}
-            </button>
-          </div>
-
           <p className="mt-6 text-center text-sm text-ink-500">
             Don&apos;t have an account?{' '}
             <Link to="/register" className="font-medium text-accent-700 hover:underline">
