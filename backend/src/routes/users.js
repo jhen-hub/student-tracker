@@ -4,10 +4,31 @@ import { pool } from '../../db.js';
 import { broadcastUpdate } from '../socket.js';
 
 const router = Router();
+
 const stripPassword = (user) => {
   const { password, ...userWithoutPassword } = user;
   return userWithoutPassword;
 };
+
+// ---------- Helpers ----------
+
+async function nextUserId(conn) {
+  const [[{ maxId }]] = await conn.query(
+    "SELECT MAX(CAST(SUBSTRING(id, 5) AS UNSIGNED)) AS maxId FROM users WHERE id LIKE 'USR-%'"
+  );
+  const next = maxId ? parseInt(maxId) + 1 : 1;
+  return `USR-${next.toString().padStart(3, '0')}`;
+}
+
+async function nextNotificationId(conn) {
+  const [[{ nMaxId }]] = await conn.query(
+    "SELECT MAX(CAST(SUBSTRING(id, 7) AS UNSIGNED)) AS nMaxId FROM notifications WHERE id LIKE 'NOTIF-%'"
+  );
+  const nNextId = nMaxId ? parseInt(nMaxId) + 1 : 1;
+  return `NOTIF-${nNextId.toString().padStart(3, '0')}`;
+}
+
+// ---------- Routes ----------
 
 // GET /api/users - List all users
 router.get('/', async (req, res, next) => {
@@ -41,70 +62,73 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-// POST /api/users/register
+// POST /api/users/register - Create a user. Staff require Admin approval
+// (status = Inactive + notification to Admin). Students are auto-approved.
 router.post('/register', async (req, res, next) => {
+  const conn = await pool.getConnection();
   try {
     const { name, email, password, role, student_id } = req.body;
-    if (!name || !email || !password) return res.status(400).json({ error: 'Name, email, and password are required' });
+    if (!name || !email || !password) {
+      return res.status(400).json({ error: 'Name, email, and password are required' });
+    }
 
     const allowedRoles = ['Staff', 'Student'];
     const chosenRole = allowedRoles.includes(role) ? role : 'Student';
-
-    const [existingUsers] = await pool.query('SELECT id FROM users WHERE email = ?', [email]);
-    if (existingUsers.length > 0) return res.status(400).json({ error: 'Email already exists' });
-
-    // Hash the password before saving
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const [[{ maxId }]] = await pool.query(
-      "SELECT MAX(CAST(SUBSTRING(id, 5) AS UNSIGNED)) AS maxId FROM users WHERE id LIKE 'USR-%'"
-    );
-    const nextId = maxId ? parseInt(maxId) + 1 : 1;
-    const id = `USR-${nextId.toString().padStart(3, '0')}`;
-
-    // Staff require Admin approval (Inactive), Students are auto-approved (Active)
     const initialStatus = chosenRole === 'Staff' ? 'Inactive' : 'Active';
 
-    await pool.query(
+    // Hash before opening the transaction — bcrypt is CPU-heavy (~100ms at
+    // cost 10) and we don't want to hold a pooled connection for that long.
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    await conn.beginTransaction();
+
+    const [existingUsers] = await conn.query('SELECT id FROM users WHERE email = ?', [email]);
+    if (existingUsers.length > 0) {
+      await conn.rollback();
+      return res.status(400).json({ error: 'Email already exists' });
+    }
+
+    const id = await nextUserId(conn);
+
+    await conn.query(
       'INSERT INTO users (id, name, email, password, role, status, student_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [id, name, email, hashedPassword, chosenRole, initialStatus, student_id || null]
     );
 
-    // If it's a Staff account, notify the Admin
+    // Staff registration → notify Admins so someone can approve the account
     if (chosenRole === 'Staff') {
-      // 1. Generate Notification ID
-      const [[{ nMaxId }]] = await pool.query(
-        "SELECT MAX(CAST(SUBSTRING(id, 7) AS UNSIGNED)) AS nMaxId FROM notifications WHERE id LIKE 'NOTIF-%'"
-      );
-      const nNextId = nMaxId ? parseInt(nMaxId) + 1 : 1;
-      const notifId = `NOTIF-${nNextId.toString().padStart(3, '0')}`;
-      
-      // 2. Insert Notification
-      await pool.query(
+      const notifId = await nextNotificationId(conn);
+      await conn.query(
         'INSERT INTO notifications (id, recipient_type, recipient_value, title, message, notification_date) VALUES (?, ?, ?, ?, ?, ?)',
         [
-          notifId, 
-          'Role', 
-          'Admin', 
-          'New Staff Registration', 
-          `${name} (${email}) has registered as Staff and requires your approval.`, 
-          new Date().toISOString().slice(0, 10)
+          notifId,
+          'Role',
+          'Admin',
+          'New Staff Registration',
+          `${name} (${email}) has registered as Staff and requires your approval.`,
+          new Date().toISOString().slice(0, 10),
         ]
       );
-
-      // 3. Live update
-      broadcastUpdate();
     }
+
+    await conn.commit();
+
+    if (chosenRole === 'Staff') broadcastUpdate();
 
     const [newUser] = await pool.query('SELECT * FROM users WHERE id = ?', [id]);
     res.status(201).json(stripPassword(newUser[0]));
   } catch (err) {
-    if (err.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Email already exists' });
+    await conn.rollback();
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(400).json({ error: 'Email already exists' });
+    }
     next(err);
+  } finally {
+    conn.release();
   }
 });
 
-// PATCH /api/users/:id/password - Change password
+// PATCH /api/users/:id/password - Change password (verifies current one)
 router.patch('/:id/password', async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -120,13 +144,11 @@ router.patch('/:id/password', async (req, res, next) => {
     const [rows] = await pool.query('SELECT password FROM users WHERE id = ?', [id]);
     if (rows.length === 0) return res.status(404).json({ error: 'User not found' });
 
-    // Verify the current password
     const isMatch = await bcrypt.compare(currentPassword, rows[0].password);
     if (!isMatch) {
       return res.status(401).json({ error: 'Current password is incorrect' });
     }
 
-    // Hash the new password
     const hashedNewPassword = await bcrypt.hash(newPassword, 10);
     await pool.query('UPDATE users SET password = ? WHERE id = ?', [hashedNewPassword, id]);
     res.status(204).send();
@@ -135,7 +157,7 @@ router.patch('/:id/password', async (req, res, next) => {
   }
 });
 
-// PATCH /api/users/:id - Update user details
+// PATCH /api/users/:id - Update user details (admin)
 router.patch('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -146,13 +168,13 @@ router.patch('/:id', async (req, res, next) => {
     delete updates.currentPassword;
     delete updates.newPassword;
 
-    // If an admin is updating the password directly via this route, hash it
+    // Admin can set a new password directly — hash it before storing
     if (updates.password) {
       updates.password = await bcrypt.hash(updates.password, 10);
     }
 
     const ALLOWED = ['name', 'email', 'password', 'role', 'status', 'student_id'];
-    const unknown = Object.keys(updates).filter(k => !ALLOWED.includes(k));
+    const unknown = Object.keys(updates).filter((k) => !ALLOWED.includes(k));
     if (unknown.length > 0) {
       return res.status(400).json({ error: `Unknown fields: ${unknown.join(', ')}` });
     }
@@ -160,10 +182,10 @@ router.patch('/:id', async (req, res, next) => {
     const fields = Object.keys(updates);
     if (fields.length === 0) return res.status(400).json({ error: 'No valid fields to update' });
 
-    const setClause = fields.map(f => `\`${f}\` = ?`).join(', ');
+    const setClause = fields.map((f) => `\`${f}\` = ?`).join(', ');
     const [result] = await pool.query(
       `UPDATE users SET ${setClause} WHERE id = ?`,
-      [...fields.map(field => updates[field]), id]
+      [...fields.map((field) => updates[field]), id]
     );
 
     if (result.affectedRows === 0) return res.status(404).json({ error: 'User not found' });
@@ -187,7 +209,8 @@ router.delete('/:id', async (req, res, next) => {
   }
 });
 
-// POST /api/users/login (Legacy route, not using sessions, but still needs bcrypt)
+// POST /api/users/login - Legacy, no session. Kept for backward compatibility.
+// The real session login lives at POST /api/auth/login.
 router.post('/login', async (req, res, next) => {
   try {
     const { email, password } = req.body;
@@ -202,40 +225,6 @@ router.post('/login', async (req, res, next) => {
 
     res.json(stripPassword(user));
   } catch (err) {
-    next(err);
-  }
-});
-
-// POST /api/users/register
-router.post('/register', async (req, res, next) => {
-  try {
-    const { name, email, password, role, student_id } = req.body;
-    if (!name || !email || !password) return res.status(400).json({ error: 'Name, email, and password are required' });
-
-    const allowedRoles = ['Staff', 'Student'];
-    const chosenRole = allowedRoles.includes(role) ? role : 'Student';
-
-    const [existingUsers] = await pool.query('SELECT id FROM users WHERE email = ?', [email]);
-    if (existingUsers.length > 0) return res.status(400).json({ error: 'Email already exists' });
-
-    // Hash the password before saving
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const [[{ maxId }]] = await pool.query(
-      "SELECT MAX(CAST(SUBSTRING(id, 5) AS UNSIGNED)) AS maxId FROM users WHERE id LIKE 'USR-%'"
-    );
-    const nextId = maxId ? parseInt(maxId) + 1 : 1;
-    const id = `USR-${nextId.toString().padStart(3, '0')}`;
-
-    await pool.query(
-      'INSERT INTO users (id, name, email, password, role, status, student_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [id, name, email, hashedPassword, chosenRole, 'Active', student_id || null]
-    );
-
-    const [newUser] = await pool.query('SELECT * FROM users WHERE id = ?', [id]);
-    res.status(201).json(stripPassword(newUser[0]));
-  } catch (err) {
-    if (err.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Email already exists' });
     next(err);
   }
 });

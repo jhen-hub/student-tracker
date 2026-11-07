@@ -1,11 +1,9 @@
 import express from 'express';
 import cors from 'cors';
 import session from 'express-session';
-import MySQLStoreFactory from 'express-mysql-session'; // <-- Added this
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import morgan from 'morgan';
-import { pool } from '../db.js'; // <-- Import pool for the session store
 
 import errorHandler from './middleware/errorHandler.js';
 import notFound from './middleware/notFound.js';
@@ -50,22 +48,16 @@ const limiter = rateLimit({
 });
 app.use('/api', limiter);
 
-// 4. Persistent MySQL Session Store
-// The factory requires the session module to be passed in for ES Modules
-const MySQLStore = MySQLStoreFactory(session);
-const sessionStore = new MySQLStore({}, pool);
-
 app.use(
   session({
     name: 'registrar.sid',
     secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
-    store: sessionStore, // <-- Now using the MySQL store
     resave: false,
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      sameSite: 'none',
-      secure: true, // Requires HTTPS in prod
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      secure: process.env.NODE_ENV === 'production',
       maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
     },
   })

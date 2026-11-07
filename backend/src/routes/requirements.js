@@ -6,8 +6,8 @@ import { broadcastUpdate } from '../socket.js';
 const router = Router();
 // ---------- Helpers ----------
 
-async function nextRequirementId() {
-  const [[{ maxId }]] = await pool.query(
+async function nextRequirementId(conn) {
+  const [[{ maxId }]] = await conn.query(
     "SELECT MAX(CAST(SUBSTRING(id, 5) AS UNSIGNED)) AS maxId FROM requirements_catalog WHERE id LIKE 'REQ-%'"
   );
   const next = maxId ? parseInt(maxId) + 1 : 1;
@@ -46,7 +46,6 @@ router.post('/', async (req, res, next) => {
     const { name, description, active } = req.body;
 
     if (!name) {
-      conn.release();
       return res.status(400).json({ error: 'Missing required field: name' });
     }
 
@@ -54,7 +53,7 @@ router.post('/', async (req, res, next) => {
 
     await conn.beginTransaction();
 
-    const id = await nextRequirementId();
+    const id = await nextRequirementId(conn);
 
     await conn.query(
       'INSERT INTO requirements_catalog (id, name, description, active) VALUES (?, ?, ?, ?)',
@@ -126,13 +125,11 @@ router.patch('/:id', async (req, res, next) => {
 
     const unknown = Object.keys(updates).filter((k) => !ALLOWED.includes(k));
     if (unknown.length > 0) {
-      conn.release();
       return res.status(400).json({ error: `Unknown fields: ${unknown.join(', ')}` });
     }
 
     const fields = Object.keys(updates);
     if (fields.length === 0) {
-      conn.release();
       return res.status(400).json({ error: 'No valid fields to update' });
     }
 
@@ -146,7 +143,6 @@ router.patch('/:id', async (req, res, next) => {
 
     if (result.affectedRows === 0) {
       await conn.rollback();
-      conn.release();
       return res.status(404).json({ error: 'Requirement not found' });
     }
 

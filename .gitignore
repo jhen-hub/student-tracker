@@ -3,3 +3,5 @@ dist
 .DS_Store
 *.log
 *.env
+backend/db/generate-hashes.js
+paste to gclass.txt

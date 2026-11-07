@@ -4,16 +4,15 @@ import { broadcastUpdate } from '../socket.js';
 
 const router = Router();
 // ---------- Helpers ----------
-async function nextStudentId() {
-  const [[{ maxId }]] = await pool.query(
+async function nextStudentId(conn) {
+  const [[{ maxId }]] = await conn.query(
     "SELECT MAX(CAST(SUBSTRING(id, 5) AS UNSIGNED)) AS maxId FROM students WHERE id LIKE 'STU-%'"
   );
   const next = maxId ? parseInt(maxId) + 1 : 1;
   return `STU-${next.toString().padStart(3, '0')}`;
 }
 
-// Fetch a single student with its requirements and activity embedded, in the
-// shape the frontend expects (joined name/description on requirements).
+// Fetch a single student with its requirements and activity embedded
 async function loadStudent(id) {
   const [rows] = await pool.query('SELECT * FROM students WHERE id = ?', [id]);
   if (rows.length === 0) return null;
@@ -37,11 +36,41 @@ async function loadStudent(id) {
 
 // ---------- Routes ----------
 
-// GET /api/students - List all students with requirements + activity
+// GET /api/students - Optimized: 3 queries total, regardless of student count
 router.get('/', async (req, res, next) => {
   try {
     const [students] = await pool.query('SELECT * FROM students');
-    const full = await Promise.all(students.map((s) => loadStudent(s.id)));
+    if (students.length === 0) return res.json([]);
+
+    const studentIds = students.map(s => s.id);
+    const placeholders = studentIds.map(() => '?').join(',');
+
+    // Get all requirements for these students in ONE query
+    const [allRequirements] = await pool.query(
+      `SELECT sr.*, rc.name AS name, rc.description, rc.active AS active
+         FROM student_requirements sr
+         JOIN requirements_catalog rc ON sr.requirement_id = rc.id
+        WHERE sr.student_id IN (${placeholders})`,
+      studentIds
+    );
+
+    // Get all activity for these students in ONE query
+    const [allActivity] = await pool.query(
+      `SELECT * FROM student_activity 
+        WHERE student_id IN (${placeholders}) 
+        ORDER BY activity_date DESC`,
+      studentIds
+    );
+
+    // Stitch them together in memory
+    const full = students.map(student => {
+      return {
+        ...student,
+        requirements: allRequirements.filter(r => r.student_id === student.id),
+        activity: allActivity.filter(a => a.student_id === student.id),
+      };
+    });
+
     res.json(full);
   } catch (err) {
     next(err);
@@ -59,9 +88,9 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-// POST /api/students - Create a new student (auto-generates id, seeds
-// student_requirements from active catalog rows, and logs the enrollment).
+// POST /api/students - Create a new student (with transaction)
 router.post('/', async (req, res, next) => {
+  const conn = await pool.getConnection();
   try {
     const { name, email, contact, year_level, section, status, user_id } = req.body;
 
@@ -69,13 +98,13 @@ router.post('/', async (req, res, next) => {
       return res.status(400).json({ error: 'Missing required fields: name, email, year_level' });
     }
 
-    // Default enrollment date to today — the schema column is NOT NULL with no
-    // DEFAULT, and the frontend form doesn't collect it.
     const enrolled_date = req.body.enrolled_date || new Date().toISOString().slice(0, 10);
 
-    const id = await nextStudentId();
+    await conn.beginTransaction();
 
-    await pool.query(
+    const id = await nextStudentId(conn);
+
+    await conn.query(
       `INSERT INTO students
          (id, user_id, name, email, contact, year_level, section, status, enrolled_date)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -83,45 +112,41 @@ router.post('/', async (req, res, next) => {
         section || null, status || 'Active', enrolled_date]
     );
 
-    // Seed a student_requirements row for every ACTIVE catalog requirement,
-    // defaulting to 'Missing'. Matches the pattern used in schema.sql's seed.
-    const [activeReqs] = await pool.query(
-      'SELECT id FROM requirements_catalog WHERE active = TRUE'
-    );
+    const [activeReqs] = await conn.query('SELECT id FROM requirements_catalog WHERE active = TRUE');
     if (activeReqs.length > 0) {
       const values = activeReqs.map((r) => [
-        `SR-${id}-${r.id}`,  // ≤ 50 chars for VARCHAR(50)
-        id,
-        r.id,
-        'Missing',
-        null,
+        `SR-${id}-${r.id}`, id, r.id, 'Missing', null,
       ]);
-      await pool.query(
+      await conn.query(
         'INSERT INTO student_requirements (id, student_id, requirement_id, status, submitted_at) VALUES ?',
         [values]
       );
     }
 
-    // Enrollment activity log entry
-    await pool.query(
+    await conn.query(
       'INSERT INTO student_activity (id, student_id, activity_date, activity_text) VALUES (?, ?, ?, ?)',
-      [`SA-${id}-0`, id, enrolled_date,
-      `Enrolled for ${year_level}${section ? `, ${section}` : ''}`]
+      [`SA-${id}-0`, id, enrolled_date, `Enrolled for ${year_level}${section ? `, ${section}` : ''}`]
     );
+
+    await conn.commit();
 
     const created = await loadStudent(id);
     broadcastUpdate();
     res.status(201).json(created);
   } catch (err) {
+    await conn.rollback();
     if (err.code === 'ER_DUP_ENTRY') {
       return res.status(400).json({ error: 'A student with that id or email already exists' });
     }
     next(err);
+  } finally {
+    conn.release();
   }
 });
 
-// PATCH /api/students/:id
+// PATCH /api/students/:id - Update student (with transaction)
 router.patch('/:id', async (req, res, next) => {
+  const conn = await pool.getConnection();
   try {
     const { id } = req.params;
     const updates = { ...req.body };
@@ -143,79 +168,67 @@ router.patch('/:id', async (req, res, next) => {
       return res.status(400).json({ error: 'No valid fields to update' });
     }
 
+    await conn.beginTransaction();
+
     const setClause = fields.map((f) => `\`${f}\` = ?`).join(', ');
-    const [result] = await pool.query(
+    const [result] = await conn.query(
       `UPDATE students SET ${setClause} WHERE id = ?`,
       [...fields.map((f) => updates[f]), id]
     );
 
     if (result.affectedRows === 0) {
+      await conn.rollback();
       return res.status(404).json({ error: 'Student not found' });
     }
 
-    // Log the edit as an activity entry
+    // Log the edit as an activity entry if core details changed
     if (updates.name || updates.year_level || updates.section) {
-      const [[{ count }]] = await pool.query(
+      const [[{ count }]] = await conn.query(
         'SELECT COUNT(*) AS count FROM student_activity WHERE student_id = ?',
         [id]
       );
-      await pool.query(
+      await conn.query(
         'INSERT INTO student_activity (id, student_id, activity_date, activity_text) VALUES (?, ?, ?, ?)',
-        [`SA-${id}-${count}`, id, new Date().toISOString().slice(0, 10),
-          'Updated student information']
+        [`SA-${id}-${count}`, id, new Date().toISOString().slice(0, 10), 'Updated student information']
       );
     }
+
+    await conn.commit();
 
     const updated = await loadStudent(id);
     broadcastUpdate();
     res.json(updated);
   } catch (err) {
+    await conn.rollback();
     if (err.code === 'ER_DUP_ENTRY') {
       return res.status(400).json({ error: 'Email already in use by another student' });
     }
     next(err);
+  } finally {
+    conn.release();
   }
 });
 
-// POST /api/students/:id/link-user - atomically link a Student-role user
+// POST /api/students/:id/link-user
 router.post('/:id/link-user', async (req, res, next) => {
   const conn = await pool.getConnection();
   try {
     const { id } = req.params;
     const { userId } = req.body;
 
-    if (!userId) {
-      conn.release();
-      return res.status(400).json({ error: 'userId is required' });
-    }
+    if (!userId) return res.status(400).json({ error: 'userId is required' });
 
     const [[student]] = await conn.query('SELECT id FROM students WHERE id = ?', [id]);
-    if (!student) {
-      conn.release();
-      return res.status(404).json({ error: 'Student not found' });
-    }
+    if (!student) return res.status(404).json({ error: 'Student not found' });
 
-    const [[user]] = await conn.query(
-      'SELECT id, role FROM users WHERE id = ?',
-      [userId]
-    );
-    if (!user) {
-      conn.release();
-      return res.status(404).json({ error: 'User not found' });
-    }
+    const [[user]] = await conn.query('SELECT id, role FROM users WHERE id = ?', [userId]);
+    if (!user) return res.status(404).json({ error: 'User not found' });
     if (user.role !== 'Student') {
-      conn.release();
-      return res.status(400).json({
-        error: 'Only users with the Student role can be linked to a student record',
-      });
+      return res.status(400).json({ error: 'Only users with the Student role can be linked' });
     }
 
     await conn.beginTransaction();
 
-    // Break any pre-existing links on either side, then set the new ones.
-    // The order matters: clear `users.student_id` for anyone currently pointing
-    // at this student, and clear `students.user_id` for any student currently
-    // pointing at this user — then write both new values.
     await conn.query('UPDATE users SET student_id = NULL WHERE student_id = ?', [id]);
     await conn.query('UPDATE students SET user_id = NULL WHERE user_id = ?', [userId]);
     await conn.query('UPDATE students SET user_id = ? WHERE id = ?', [userId, id]);
@@ -260,12 +273,8 @@ router.delete('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    // Break the link from any user account first — `users.student_id` is a
-    // plain column, not an FK, so it won't cascade.
     await pool.query('UPDATE users SET student_id = NULL WHERE student_id = ?', [id]);
 
-    // student_requirements and student_activity both have ON DELETE CASCADE,
-    // so this single delete cleans up the rest.
     const [result] = await pool.query('DELETE FROM students WHERE id = ?', [id]);
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'Student not found' });

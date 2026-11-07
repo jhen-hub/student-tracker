@@ -2,10 +2,10 @@
 -- MySQL syntax
 
 -- Create and select the database
-CREATE DATABASE IF NOT EXISTS vertudez
+CREATE DATABASE IF NOT EXISTS `vertudez-new`
     CHARACTER SET utf8mb4
     COLLATE utf8mb4_unicode_ci;
-USE vertudez;
+USE `vertudez-new`;
 
 -- Users table
 CREATE TABLE users (
@@ -137,10 +137,10 @@ INSERT INTO requirements_catalog (id, name, description, active) VALUES
 
 -- Users (inserted BEFORE students to satisfy students.user_id FK)
 INSERT INTO users (id, name, email, password, role, status, student_id) VALUES
-('USR-001', 'Admin', 'admin@registrar.edu', 'admin123', 'Admin', 'Active', NULL),
-('USR-002', 'Grace Lim', 'staff@registrar.edu', 'staff123', 'Staff', 'Active', NULL),
-('USR-003', 'Juan Dela Cruz', 'student@registrar.edu', 'student123', 'Student', 'Active', 'STU-001'),
-('USR-004', 'Ramon Diaz', 'ramon.diaz@registrar.edu', 'staff123', 'Staff', 'Inactive', NULL);
+('USR-001', 'Admin', 'admin@registrar.edu', '$2b$12$BZKNSoOdC4BbKNYq4Tu7v.2xiWp15tTULAJpiIXvUsGXYBymgOlN2', 'Admin', 'Active', NULL),
+('USR-002', 'Grace Lim', 'staff@registrar.edu', '$2b$12$x2TwlZaKkyXHfX1fQ8tA5OJKQ00NLkmqcRP0N26X2vbRMQwJPoObC', 'Staff', 'Active', NULL),
+('USR-003', 'Juan Dela Cruz', 'student@registrar.edu', '$2b$12$xRkh7Fn86veeRgTULglIj.hl2d4BSMkQKQfqVTq7e4t7zCHjNbrU6', 'Student', 'Active', 'STU-001'),
+('USR-004', 'Ramon Diaz', 'ramon.diaz@registrar.edu', '$2b$12$BzlN0.nnS5x/IA04K7/rGe8OgmASBHcAKXSJgeE3VpdTuTDuLturK', 'Staff', 'Inactive', NULL);
 
 -- Students (inserted AFTER users so user_id FK resolves)
 INSERT INTO students (id, user_id, name, email, contact, year_level, section, status, enrolled_date) VALUES
